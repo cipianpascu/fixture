@@ -1,0 +1,16 @@
+target/
+!target/*.jar
+.git/
+.gitignore
+*.md
+*.log
+logs/
+.mvn/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Dockerfile
+docker-compose.yml
+examples/
+.github/

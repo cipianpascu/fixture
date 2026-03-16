@@ -1,0 +1,58 @@
+# Routing profile configuration
+gateway:
+  mode: routing
+  
+  # Backend configurations (file-based for routing mode)
+  backends:
+    - name: backend-service-1
+      baseUrl: http://localhost:9001
+      path: /api/v1/service1
+      securityType: API_KEY
+      securityConfig:
+        headerName: X-API-Key
+        # Pass through from incoming request
+      enabled: true
+      
+    - name: backend-service-2
+      baseUrl: http://localhost:9002
+      path: /api/v1/service2
+      securityType: OAUTH2
+      securityConfig:
+        # OAuth2 tokens passed through from Authorization header
+      enabled: true
+      
+    - name: backend-service-3
+      baseUrl: http://localhost:9003
+      path: /api/v1/service3
+      securityType: BASIC_AUTH
+      securityConfig:
+        # Basic auth passed through from Authorization header
+      enabled: true
+      
+    - name: backend-service-4
+      baseUrl: http://localhost:9004
+      path: /api/v1/service4
+      securityType: JWT
+      securityConfig:
+        # JWT tokens passed through from Authorization header
+      enabled: true
+
+# Use H2 in-memory database for routing mode (minimal DB usage)
+spring:
+  datasource:
+    url: jdbc:h2:mem:routingdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+logging:
+  level:
+    com.agent.gateway: INFO

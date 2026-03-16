@@ -1,0 +1,319 @@
+# Backend Gateway for Agents
+
+A Spring Boot-based API Gateway that serves dual purposes:
+1. **Routing Mode**: Acts as an API gateway (similar to Apigee) routing requests to multiple backend services with security pass-through
+2. **Fixture Mode**: Serves as a mocking/fixture service with database-driven dynamic responses for lower environments
+
+## Features
+
+### Core Capabilities
+- ✅ Dual mode operation (Routing vs Fixture)
+- ✅ Support for multiple authentication types (API Key, OAuth2, JWT, Basic Auth, mTLS)
+- ✅ Security credentials pass-through from incoming requests
+- ✅ Database-driven mock responses with dynamic matching
+- ✅ Resilience patterns (Circuit Breaker, Retry, Timeout)
+- ✅ Request/Response logging and monitoring
+- ✅ Prometheus metrics integration
+- ✅ Admin API for mock management
+- ✅ OpenAPI/Swagger documentation
+
+### Technology Stack
+- **Java 21**
+- **Spring Boot 3.2.3**
+- **Spring Data JPA**
+- **PostgreSQL** (fixture mode) / **H2** (routing mode)
+- **Resilience4j** (Circuit breaker, retry, timeout)
+- **Lombok**
+- **Maven**
+
+## Quick Start
+
+### Prerequisites
+- Java 21
+- Maven 3.6+
+- PostgreSQL 12+ (for fixture mode)
+
+### Build
+```bash
+mvn clean install
+```
+
+### Running in Routing Mode
+```bash
+# Using H2 in-memory database
+mvn spring-boot:run -Dspring-boot.run.profiles=routing
+```
+
+### Running in Fixture Mode
+```bash
+# Requires PostgreSQL database
+mvn spring-boot:run -Dspring-boot.run.profiles=fixture
+```
+
+## Configuration
+
+### Routing Mode Configuration
+In routing mode, backends are configured via `application-routing.yml`:
+
+```yaml
+gateway:
+  mode: routing
+  backends:
+    - name: backend-service-1
+      baseUrl: http://localhost:9001
+      path: /api/v1/service1
+      securityType: API_KEY
+      securityConfig:
+        headerName: X-API-Key
+      enabled: true
+```
+
+### Fixture Mode Configuration
+In fixture mode, backends and mocks are managed via database using the Admin API.
+
+### Database Configuration
+Update `application.yml` or environment variables:
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/backend_gateway
+    username: postgres
+    password: postgres
+```
+
+## API Usage
+
+### Gateway Endpoints
+
+#### Forward Request to Backend
+```bash
+# Request format: /api/v1/{backendName}/{remainingPath}
+curl -X GET http://localhost:8080/api/v1/backend-service-1/users \
+  -H "X-API-Key: your-api-key"
+```
+
+#### Health Check
+```bash
+curl http://localhost:8080/api/v1/health
+```
+
+### Admin API (Fixture Mode)
+
+#### Backend Management
+
+**Get All Backends**
+```bash
+curl http://localhost:8080/admin/api/backends
+```
+
+**Create Backend**
+```bash
+curl -X POST http://localhost:8080/admin/api/backends \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "user-service",
+    "baseUrl": "http://localhost:9001",
+    "path": "/api/v1/users",
+    "securityType": "OAUTH2",
+    "securityConfig": "{}",
+    "enabled": true
+  }'
+```
+
+**Update Backend**
+```bash
+curl -X PUT http://localhost:8080/admin/api/backends/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "baseUrl": "http://localhost:9002",
+    "path": "/api/v2/users",
+    "securityType": "JWT",
+    "enabled": true
+  }'
+```
+
+**Delete Backend**
+```bash
+curl -X DELETE http://localhost:8080/admin/api/backends/1
+```
+
+#### Mock Endpoint Management
+
+**Create Mock Endpoint**
+```bash
+curl -X POST http://localhost:8080/admin/api/mock-endpoints \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backendName": "user-service",
+    "method": "GET",
+    "path": "/users/{id}",
+    "description": "Get user by ID",
+    "enabled": true
+  }'
+```
+
+**Get Mock Endpoints by Backend**
+```bash
+curl http://localhost:8080/admin/api/mock-endpoints/backend/user-service
+```
+
+#### Mock Response Management
+
+**Create Mock Response**
+```bash
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Success Response",
+    "matchConditions": "{\"queryParams\":{\"status\":\"active\"}}",
+    "httpStatus": 200,
+    "responseBody": "{\"id\":1,\"name\":\"John Doe\",\"email\":\"john@example.com\"}",
+    "responseHeaders": "{\"Content-Type\":\"application/json\"}",
+    "priority": 10,
+    "enabled": true,
+    "delayMs": 100
+  }'
+```
+
+**Update Mock Response**
+```bash
+curl -X PUT http://localhost:8080/admin/api/mock-responses/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Response",
+    "httpStatus": 200,
+    "responseBody": "{\"id\":1,\"name\":\"Jane Doe\"}",
+    "priority": 5,
+    "enabled": true
+  }'
+```
+
+## Mock Response Matching
+
+Mock responses support dynamic matching based on:
+- **Query Parameters**: Match specific query parameter values
+- **Headers**: Match request header values
+- **Body Content**: Match if request body contains specific text
+
+### Match Conditions Example
+```json
+{
+  "queryParams": {
+    "status": "active",
+    "role": "admin"
+  },
+  "headers": {
+    "X-User-Type": "premium"
+  },
+  "bodyContains": "special_field"
+}
+```
+
+Responses are evaluated by priority (highest first), and the first matching response is returned.
+
+## Monitoring & Metrics
+
+### Actuator Endpoints
+- Health: `http://localhost:8080/actuator/health`
+- Metrics: `http://localhost:8080/actuator/metrics`
+- Prometheus: `http://localhost:8080/actuator/prometheus`
+
+### Swagger UI
+Access API documentation at: `http://localhost:8080/swagger-ui.html`
+
+## Resilience Configuration
+
+Circuit breaker, retry, and timeout configurations are in `application.yml`:
+
+```yaml
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+```
+
+## Security Types Supported
+
+- **API_KEY**: Pass API key via custom header
+- **OAUTH2**: Pass OAuth2 token via Authorization header
+- **JWT**: Pass JWT token via Authorization header
+- **BASIC_AUTH**: Pass Basic auth credentials via Authorization header
+- **MTLS**: Mutual TLS authentication
+- **NONE**: No authentication
+
+All security credentials are passed through from incoming requests to backend services.
+
+## Project Structure
+
+```
+backend-gateway/
+├── src/main/java/com/agent/gateway/
+│   ├── config/              # Configuration classes
+│   ├── controller/          # REST controllers
+│   ├── entity/              # JPA entities
+│   ├── model/               # Enums and models
+│   ├── repository/          # JPA repositories
+│   └── service/             # Business logic
+├── src/main/resources/
+│   ├── application.yml      # Base configuration
+│   ├── application-routing.yml   # Routing mode config
+│   └── application-fixture.yml   # Fixture mode config
+└── pom.xml                  # Maven dependencies
+```
+
+## Development
+
+### Running Tests
+```bash
+mvn test
+```
+
+### Building Docker Image
+```bash
+docker build -t backend-gateway:latest .
+```
+
+### Environment Variables
+Key environment variables:
+- `SPRING_PROFILES_ACTIVE`: Set to `routing` or `fixture`
+- `SPRING_DATASOURCE_URL`: Database connection URL
+- `SPRING_DATASOURCE_USERNAME`: Database username
+- `SPRING_DATASOURCE_PASSWORD`: Database password
+
+## Troubleshooting
+
+### Database Connection Issues
+Ensure PostgreSQL is running and credentials are correct:
+```bash
+psql -U postgres -h localhost -d backend_gateway
+```
+
+### Circuit Breaker Opening
+Check backend service health and adjust resilience configuration if needed.
+
+### Mock Not Matching
+- Verify backend name matches exactly
+- Check method and path pattern
+- Review match conditions JSON format
+- Check priority ordering
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+This project is licensed under the MIT License.
+
+## Support
+
+For issues and questions, please create an issue in the repository.

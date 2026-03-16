@@ -1,0 +1,28 @@
+# Fixture/Mock profile configuration
+gateway:
+  mode: fixture
+
+# Use PostgreSQL for fixture mode (database-driven mocks)
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/backend_gateway_fixture
+    driver-class-name: org.postgresql.Driver
+    username: postgres
+    password: postgres
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+# Admin UI enabled for fixture mode
+admin:
+  ui:
+    enabled: true
+    path: /admin
+
+logging:
+  level:
+    com.agent.gateway: DEBUG
+    org.hibernate.SQL: DEBUG

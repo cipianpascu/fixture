@@ -1,0 +1,368 @@
+{
+  "info": {
+    "name": "Backend Gateway API",
+    "description": "Collection for testing Backend Gateway in both routing and fixture modes",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Gateway Endpoints",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "health"]
+            }
+          }
+        },
+        {
+          "name": "Get Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer fake-jwt-token",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/user-service/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "user-service", "users"]
+            }
+          }
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer fake-jwt-token",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/user-service/users/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "user-service", "users", "1"]
+            }
+          }
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer fake-jwt-token",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/user-service/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "user-service", "users"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin API - Backends",
+      "item": [
+        {
+          "name": "Get All Backends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/backends",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "backends"]
+            }
+          }
+        },
+        {
+          "name": "Create Backend",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"user-service\",\n  \"baseUrl\": \"http://localhost:9001\",\n  \"path\": \"/api/v1/users\",\n  \"securityType\": \"JWT\",\n  \"securityConfig\": \"{}\",\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/backends",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "backends"]
+            }
+          }
+        },
+        {
+          "name": "Update Backend",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"baseUrl\": \"http://localhost:9002\",\n  \"path\": \"/api/v2/users\",\n  \"securityType\": \"OAUTH2\",\n  \"securityConfig\": \"{}\",\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/backends/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "backends", "1"]
+            }
+          }
+        },
+        {
+          "name": "Delete Backend",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/backends/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "backends", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin API - Mock Endpoints",
+      "item": [
+        {
+          "name": "Get All Mock Endpoints",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/mock-endpoints",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "mock-endpoints"]
+            }
+          }
+        },
+        {
+          "name": "Get Mock Endpoints by Backend",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/mock-endpoints/backend/user-service",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "mock-endpoints", "backend", "user-service"]
+            }
+          }
+        },
+        {
+          "name": "Create Mock Endpoint",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"backendName\": \"user-service\",\n  \"method\": \"GET\",\n  \"path\": \"/users\",\n  \"description\": \"Get all users\",\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/mock-endpoints",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "mock-endpoints"]
+            }
+          }
+        },
+        {
+          "name": "Update Mock Endpoint",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"backendName\": \"user-service\",\n  \"method\": \"GET\",\n  \"path\": \"/users\",\n  \"description\": \"Get all active users\",\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/mock-endpoints/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "mock-endpoints", "1"]
+            }
+          }
+        },
+        {
+          "name": "Delete Mock Endpoint",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/mock-endpoints/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "mock-endpoints", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin API - Mock Responses",
+      "item": [
+        {
+          "name": "Get Responses by Endpoint",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/mock-endpoints/1/responses",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "mock-endpoints", "1", "responses"]
+            }
+          }
+        },
+        {
+          "name": "Create Mock Response",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Success Response\",\n  \"matchConditions\": \"{}\",\n  \"httpStatus\": 200,\n  \"responseBody\": \"[{\\\"id\\\":1,\\\"name\\\":\\\"John Doe\\\",\\\"email\\\":\\\"john@example.com\\\"}]\",\n  \"responseHeaders\": \"{\\\"Content-Type\\\":\\\"application/json\\\"}\",\n  \"priority\": 10,\n  \"enabled\": true,\n  \"delayMs\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/mock-endpoints/1/responses",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "mock-endpoints", "1", "responses"]
+            }
+          }
+        },
+        {
+          "name": "Update Mock Response",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Response\",\n  \"matchConditions\": \"{}\",\n  \"httpStatus\": 200,\n  \"responseBody\": \"[{\\\"id\\\":1,\\\"name\\\":\\\"Jane Doe\\\"}]\",\n  \"responseHeaders\": \"{\\\"Content-Type\\\":\\\"application/json\\\"}\",\n  \"priority\": 5,\n  \"enabled\": true,\n  \"delayMs\": 50\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/mock-responses/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "mock-responses", "1"]
+            }
+          }
+        },
+        {
+          "name": "Delete Mock Response",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/api/mock-responses/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "api", "mock-responses", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Actuator",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "health"]
+            }
+          }
+        },
+        {
+          "name": "Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "metrics"]
+            }
+          }
+        },
+        {
+          "name": "Prometheus",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/prometheus",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "prometheus"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
