@@ -6,9 +6,11 @@ import com.agent.gateway.entity.MockResponse;
 import com.agent.gateway.model.GatewayMode;
 import com.agent.gateway.service.BackendConfigService;
 import com.agent.gateway.service.MockService;
+import com.agent.gateway.service.OpenApiSchemaService;
 import com.agent.gateway.service.ProxyService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.models.OpenAPI;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +32,7 @@ public class GatewayController {
     private final BackendConfigService backendConfigService;
     private final ProxyService proxyService;
     private final MockService mockService;
+    private final OpenApiSchemaService schemaService;
     private final ObjectMapper objectMapper;
 
     @RequestMapping(value = "/{backendName}/**", method = {RequestMethod.GET, RequestMethod.POST, 
@@ -85,6 +88,37 @@ public class GatewayController {
 
     private ResponseEntity<String> handleFixtureRequest(String backendName, String method, String path,
                                                         HttpServletRequest request, String requestBody) {
+        // Validate request against schema if configured
+        Optional<BackendConfig> backendOpt = backendConfigService.getBackendByName(backendName);
+        if (backendOpt.isPresent() && backendOpt.get().getOpenApiSchema() != null) {
+            BackendConfig backend = backendOpt.get();
+            OpenAPI openAPI = schemaService.parseSchema(backend.getOpenApiSchema());
+            
+            if (openAPI != null && schemaService.shouldEnforceValidation(backend)) {
+                // Extract query parameters
+                Map<String, String> queryParams = new java.util.HashMap<>();
+                request.getParameterMap().forEach((key, values) -> {
+                    if (values.length > 0) {
+                        queryParams.put(key, values[0]);
+                    }
+                });
+                
+                OpenApiSchemaService.ValidationResult validationResult = schemaService.validateRequest(
+                        openAPI, path, method, queryParams, requestBody);
+                
+                if (!validationResult.isValid()) {
+                    log.error("Request validation failed: {}", validationResult.getMessage());
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body("{\"error\": \"Request validation failed\", \"details\": \"" + 
+                                  validationResult.getMessage() + "\"}");
+                }
+                
+                if (validationResult.hasWarnings()) {
+                    log.warn("Request validation warning: {}", validationResult.getMessage());
+                }
+            }
+        }
+        
         Optional<MockResponse> mockResponseOpt = mockService.findMatchingResponse(
                 backendName, method, path, request, requestBody);
         

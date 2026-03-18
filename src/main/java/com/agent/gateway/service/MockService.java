@@ -13,8 +13,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +22,8 @@ public class MockService {
     private final MockEndpointRepository mockEndpointRepository;
     private final MockResponseRepository mockResponseRepository;
     private final ObjectMapper objectMapper;
+    private final BackendConfigService backendConfigService;
+    private final OpenApiSchemaService schemaService;
 
     public Optional<MockResponse> findMatchingResponse(String backendName, String method, String path, 
                                                         HttpServletRequest request, String requestBody) {
@@ -162,6 +162,9 @@ public class MockService {
         MockEndpoint endpoint = mockEndpointRepository.findById(endpointId)
                 .orElseThrow(() -> new IllegalArgumentException("MockEndpoint not found with id: " + endpointId));
         
+        // Validate against schema if configured
+        validateMockResponse(endpoint, mockResponse);
+        
         mockResponse.setMockEndpoint(endpoint);
         return mockResponseRepository.save(mockResponse);
     }
@@ -194,5 +197,40 @@ public class MockService {
     @Transactional
     public void deleteMockResponse(Long id) {
         mockResponseRepository.deleteById(id);
+    }
+
+    // Validation methods
+    private void validateMockResponse(MockEndpoint endpoint, MockResponse mockResponse) {
+        var backendOpt = backendConfigService.getBackendByName(endpoint.getBackendName());
+        if (backendOpt.isEmpty()) {
+            return; // No backend found, skip validation
+        }
+
+        var backend = backendOpt.get();
+        if (backend.getOpenApiSchema() == null) {
+            return; // No schema configured, skip validation
+        }
+
+        io.swagger.v3.oas.models.OpenAPI openAPI = schemaService.parseSchema(backend.getOpenApiSchema());
+        if (openAPI == null) {
+            return; // Invalid schema, skip validation
+        }
+
+        OpenApiSchemaService.ValidationResult result = schemaService.validateResponse(
+                openAPI,
+                endpoint.getPath(),
+                endpoint.getMethod(),
+                mockResponse.getHttpStatus(),
+                mockResponse.getResponseBody()
+        );
+
+        if (!result.isValid() && schemaService.shouldEnforceValidation(backend)) {
+            throw new IllegalArgumentException("Schema validation failed: " + result.getMessage());
+        }
+
+        if (result.hasWarnings() && schemaService.shouldWarnOnValidation(backend)) {
+            log.warn("Schema validation warning for mock response '{}': {}", 
+                    mockResponse.getName(), result.getMessage());
+        }
     }
 }

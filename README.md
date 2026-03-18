@@ -10,7 +10,10 @@ A Spring Boot-based API Gateway that serves dual purposes:
 - ✅ Dual mode operation (Routing vs Fixture)
 - ✅ Support for multiple authentication types (API Key, OAuth2, JWT, Basic Auth, mTLS)
 - ✅ Security credentials pass-through from incoming requests
+- ✅ **OpenAPI 3.0 Schema Support** - Auto-generate mocks, validate data, document APIs
 - ✅ Database-driven mock responses with dynamic matching
+- ✅ Guided mock generation with custom values
+- ✅ Request/Response validation against OpenAPI schemas
 - ✅ Resilience patterns (Circuit Breaker, Retry, Timeout)
 - ✅ Request/Response logging and monitoring
 - ✅ Prometheus metrics integration
@@ -212,6 +215,60 @@ Mock responses support dynamic matching based on:
 
 Responses are evaluated by priority (highest first), and the first matching response is returned.
 
+## OpenAPI Schema Support
+
+Backend Gateway now supports OpenAPI 3.0 schemas for each backend, enabling powerful features:
+
+### Features
+- **Auto-generate mocks** from OpenAPI specifications
+- **Guided mock generation** with custom values for specific fields
+- **Validate mock responses** against schema definitions
+- **Validate incoming requests** in fixture mode
+- **Configurable validation** modes (STRICT, WARN, OFF)
+
+### Upload Schema
+
+```bash
+POST /admin/api/backends/1/schema
+Content-Type: application/json
+
+{
+  "openApiSchema": "{ ... OpenAPI 3.0 spec ... }",
+  "migrationOption": "REVALIDATE_AND_DISABLE"
+}
+```
+
+### Generate Schema from Manual Mocks
+
+```bash
+POST /admin/api/backends/1/generate-schema
+```
+
+Automatically generates OpenAPI 3.0 schema from existing mock endpoints and responses. Perfect for documenting manually created APIs!
+
+### Generate Mocks from Schema
+
+```bash
+POST /admin/api/backends/1/generate-mocks
+Content-Type: application/json
+
+{
+  "generateEndpoints": true,
+  "generateResponses": true,
+  "guidedValues": {
+    "id": 1,
+    "name": "John Doe",
+    "users[].__size": 10
+  }
+}
+```
+### Validation Modes
+{{ ... }}
+- **WARN**: Allow operations but log warnings  
+- **OFF**: No validation (default)
+
+**See [OpenAPI Schema Support Documentation](docs/OPENAPI_SCHEMA_SUPPORT.md) for detailed information.**
+
 ## Monitoring & Metrics
 
 ### Actuator Endpoints
@@ -220,7 +277,16 @@ Responses are evaluated by priority (highest first), and the first matching resp
 - Prometheus: `http://localhost:8080/actuator/prometheus`
 
 ### Swagger UI
-Access API documentation at: `http://localhost:8080/swagger-ui.html`
+
+**Global Gateway Documentation:**
+- Main Swagger UI: `http://localhost:8080/swagger-ui.html`
+
+**Per-Backend OpenAPI Documentation:**
+- List backends with schemas: `http://localhost:8080/api/backends/with-schemas`
+- Get backend OpenAPI spec: `http://localhost:8080/api/backends/{backendName}/openapi.json`
+- View in Swagger UI: `http://localhost:8080/swagger-ui.html?url=/api/backends/{backendName}/openapi.json`
+
+Each backend with an uploaded OpenAPI schema can be viewed in the standard Swagger UI by specifying its OpenAPI URL.
 
 ## Resilience Configuration
 

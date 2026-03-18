@@ -34,6 +34,12 @@ class MockServiceTest {
     private ObjectMapper objectMapper;
 
     @Mock
+    private BackendConfigService backendConfigService;
+
+    @Mock
+    private OpenApiSchemaService schemaService;
+
+    @Mock
     private HttpServletRequest request;
 
     @InjectMocks
@@ -168,6 +174,8 @@ class MockServiceTest {
         // Given
         when(mockEndpointRepository.findById(1L))
                 .thenReturn(Optional.of(mockEndpoint));
+        when(backendConfigService.getBackendByName("test-service"))
+                .thenReturn(Optional.empty()); // No backend = skip validation
         when(mockResponseRepository.save(any(MockResponse.class)))
                 .thenReturn(mockResponse);
 
