@@ -1,20 +1,26 @@
 package com.agent.gateway.controller;
 
+import com.agent.gateway.dto.BackendOpenApiCatalogDTO;
+import com.agent.gateway.dto.BackendOpenApiDescriptorDTO;
 import com.agent.gateway.entity.BackendConfig;
 import com.agent.gateway.service.BackendConfigService;
+import io.swagger.v3.core.util.Json;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.util.HashMap;
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -33,23 +39,31 @@ public class SwaggerController {
      */
     @GetMapping("/with-schemas")
     @Operation(summary = "List all backends with OpenAPI schemas")
-    public ResponseEntity<List<Map<String, Object>>> listBackendsWithSchemas() {
-        List<Map<String, Object>> backends = backendConfigService.getAllBackends().stream()
+    public ResponseEntity<List<BackendOpenApiDescriptorDTO>> listBackendsWithSchemas(HttpServletRequest request) {
+        List<BackendOpenApiDescriptorDTO> backends = backendConfigService.getAllBackends().stream()
                 .filter(b -> b.getOpenApiSchema() != null && !b.getOpenApiSchema().isEmpty())
-                .map(b -> {
-                    Map<String, Object> info = new HashMap<>();
-                    info.put("name", b.getName());
-                    info.put("baseUrl", b.getBaseUrl());
-                    info.put("path", b.getPath());
-                    info.put("securityType", b.getSecurityType());
-                    info.put("enabled", b.getEnabled());
-                    info.put("openapiUrl", "/api/backends/" + b.getName() + "/openapi.json");
-                    info.put("swaggerUrl", "/swagger-ui.html?url=/api/backends/" + b.getName() + "/openapi.json");
-                    return info;
-                })
+                .map(b -> toDescriptor(b, request))
                 .collect(Collectors.toList());
         
         return ResponseEntity.ok(backends);
+    }
+
+    @GetMapping("/catalog")
+    @Operation(summary = "List backend OpenAPI documents in an agent-friendly catalog")
+    public ResponseEntity<BackendOpenApiCatalogDTO> getBackendOpenApiCatalog(HttpServletRequest request) {
+        List<BackendOpenApiDescriptorDTO> backends = backendConfigService.getAllBackends().stream()
+                .filter(b -> b.getOpenApiSchema() != null && !b.getOpenApiSchema().isEmpty())
+                .map(b -> toDescriptor(b, request))
+                .collect(Collectors.toList());
+
+        BackendOpenApiCatalogDTO catalog = BackendOpenApiCatalogDTO.builder()
+                .serverUrl(baseUrl(request))
+                .backendCount(backends.size())
+                .generatedAt(LocalDateTime.now())
+                .backends(backends)
+                .build();
+
+        return ResponseEntity.ok(catalog);
     }
 
     /**
@@ -74,9 +88,46 @@ public class SwaggerController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body("{\"error\":\"Backend has no OpenAPI schema\"}");
         }
+
+        OpenAPI openAPI = new OpenAPIV3Parser().readContents(backend.getOpenApiSchema(), null, null).getOpenAPI();
+        if (openAPI == null) {
+            log.warn("Backend has invalid OpenAPI schema: {}", backendName);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("{\"error\":\"Backend has an invalid OpenAPI schema\"}");
+        }
         
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(backend.getOpenApiSchema());
+                .body(Json.pretty(openAPI));
+    }
+
+    private BackendOpenApiDescriptorDTO toDescriptor(BackendConfig backend, HttpServletRequest request) {
+        String openapiPath = "/api/backends/" + backend.getName() + "/openapi.json";
+        String swaggerPath = "/swagger-ui.html?url=" + openapiPath;
+        OpenAPI openAPI = new OpenAPIV3Parser().readContents(backend.getOpenApiSchema(), null, null).getOpenAPI();
+
+        return BackendOpenApiDescriptorDTO.builder()
+                .name(backend.getName())
+                .title(openAPI != null && openAPI.getInfo() != null ? openAPI.getInfo().getTitle() : backend.getName())
+                .version(openAPI != null && openAPI.getInfo() != null ? openAPI.getInfo().getVersion() : null)
+                .description(openAPI != null && openAPI.getInfo() != null ? openAPI.getInfo().getDescription() : null)
+                .backendBaseUrl(backend.getBaseUrl())
+                .backendPath(backend.getPath())
+                .gatewayPathPrefix("/api/v1/" + backend.getName())
+                .securityType(backend.getSecurityType() != null ? backend.getSecurityType().name() : null)
+                .enabled(backend.getEnabled())
+                .openapiPath(openapiPath)
+                .swaggerPath(swaggerPath)
+                .openapiUrl(baseUrl(request) + openapiPath)
+                .swaggerUrl(baseUrl(request) + swaggerPath)
+                .build();
+    }
+
+    private String baseUrl(HttpServletRequest request) {
+        return ServletUriComponentsBuilder.fromRequestUri(request)
+                .replacePath(null)
+                .replaceQuery(null)
+                .build()
+                .toUriString();
     }
 }

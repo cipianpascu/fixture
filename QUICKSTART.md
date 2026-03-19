@@ -45,6 +45,8 @@ curl http://localhost:8081/api/v1/user-service/users/1
 - Java 21 installed
 - PostgreSQL running (for fixture mode)
 
+When running with Maven, the application listens on `http://localhost:8080` by default for either profile unless you pass `--server.port=...`.
+
 ### Routing Mode
 ```bash
 # Uses H2 in-memory database
@@ -131,6 +133,9 @@ curl http://localhost:8080/api/v1/test-service/hello
 ## Access Swagger UI
 
 Open your browser: `http://localhost:8080/swagger-ui.html`
+
+For per-backend discovery, use `http://localhost:8080/api/backends/catalog` or `http://localhost:8080/api/backends/with-schemas`.
+Per-backend OpenAPI documents are available at `http://localhost:8080/api/backends/{backendName}/openapi.json` and are always returned as JSON.
 
 ## Access H2 Console (Routing Mode Only)
 

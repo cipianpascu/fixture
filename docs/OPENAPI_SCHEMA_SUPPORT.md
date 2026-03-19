@@ -221,22 +221,61 @@ Each backend with an uploaded OpenAPI schema can be viewed using the standard Sp
 
 ### Access Swagger UI
 
+These endpoints are intended to be used by both humans and agent clients. The global `/api-docs` endpoint documents the admin and discovery APIs; per-backend API contracts are exposed through the endpoints below.
+
+**Agent-Friendly Catalog:**
+```bash
+GET http://localhost:8080/api/backends/catalog
+```
+
+Returns a structured catalog with server metadata and absolute URLs for each backend OpenAPI document:
+```json
+{
+  "serverUrl": "http://localhost:8080",
+  "backendCount": 1,
+  "generatedAt": "2026-03-19T07:57:27",
+  "backends": [
+    {
+      "name": "user-service",
+      "title": "User Service API",
+      "version": "1.0.0",
+      "description": "User management endpoints",
+      "backendBaseUrl": "http://localhost:9001",
+      "backendPath": "/api/v1",
+      "gatewayPathPrefix": "/api/v1/user-service",
+      "securityType": "JWT",
+      "enabled": true,
+      "openapiUrl": "http://localhost:8080/api/backends/user-service/openapi.json",
+      "swaggerUrl": "http://localhost:8080/swagger-ui.html?url=/api/backends/user-service/openapi.json",
+      "openapiPath": "/api/backends/user-service/openapi.json",
+      "swaggerPath": "/swagger-ui.html?url=/api/backends/user-service/openapi.json"
+    }
+  ]
+}
+```
+
 **List All Backends with Schemas:**
 ```bash
 GET http://localhost:8080/api/backends/with-schemas
 ```
 
-Returns JSON array with backend information and Swagger URLs:
+Returns a JSON array with the same per-backend descriptors:
 ```json
 [
   {
     "name": "user-service",
-    "baseUrl": "http://localhost:9001",
-    "path": "/api/v1",
+    "title": "User Service API",
+    "version": "1.0.0",
+    "description": "User management endpoints",
+    "backendBaseUrl": "http://localhost:9001",
+    "backendPath": "/api/v1",
+    "gatewayPathPrefix": "/api/v1/user-service",
     "securityType": "JWT",
     "enabled": true,
-    "openapiUrl": "/api/backends/user-service/openapi.json",
-    "swaggerUrl": "/swagger-ui.html?url=/api/backends/user-service/openapi.json"
+    "openapiUrl": "http://localhost:8080/api/backends/user-service/openapi.json",
+    "swaggerUrl": "http://localhost:8080/swagger-ui.html?url=/api/backends/user-service/openapi.json",
+    "openapiPath": "/api/backends/user-service/openapi.json",
+    "swaggerPath": "/swagger-ui.html?url=/api/backends/user-service/openapi.json"
   }
 ]
 ```
@@ -246,7 +285,8 @@ Returns JSON array with backend information and Swagger URLs:
 GET http://localhost:8080/api/backends/{backendName}/openapi.json
 ```
 
-Returns the raw OpenAPI 3.0 JSON specification for the backend.
+Returns the normalized OpenAPI 3.0 JSON specification for the backend.
+If the schema was uploaded in YAML, this endpoint still returns JSON so clients can consume a consistent format.
 
 **View in Swagger UI:**
 ```
@@ -268,6 +308,9 @@ curl -X POST http://localhost:8080/admin/api/backends/1/schema \
 
 # 2. List backends with schemas
 curl http://localhost:8080/api/backends/with-schemas
+
+# Or get the catalog intended for agent discovery
+curl http://localhost:8080/api/backends/catalog
 
 # 3. View specific backend in Swagger UI
 # Open in browser: 

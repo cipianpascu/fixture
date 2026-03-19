@@ -31,6 +31,10 @@ A Spring Boot-based API Gateway that serves dual purposes:
 
 ## Quick Start
 
+Port note:
+When you run the application directly with Maven, it listens on `http://localhost:8080` by default for both profiles unless you override `server.port`.
+When you run `docker-compose up`, routing mode is exposed on `http://localhost:8080` and fixture mode is exposed on `http://localhost:8081`.
+
 ### Prerequisites
 - Java 21
 - Maven 3.6+
@@ -280,13 +284,17 @@ Content-Type: application/json
 
 **Global Gateway Documentation:**
 - Main Swagger UI: `http://localhost:8080/swagger-ui.html`
+- Global `/api-docs` documents the admin API and discovery endpoints. The catch-all gateway dispatcher is intentionally not exposed as a concrete OpenAPI operation.
 
 **Per-Backend OpenAPI Documentation:**
+- Agent-friendly catalog: `http://localhost:8080/api/backends/catalog`
 - List backends with schemas: `http://localhost:8080/api/backends/with-schemas`
 - Get backend OpenAPI spec: `http://localhost:8080/api/backends/{backendName}/openapi.json`
 - View in Swagger UI: `http://localhost:8080/swagger-ui.html?url=/api/backends/{backendName}/openapi.json`
 
 Each backend with an uploaded OpenAPI schema can be viewed in the standard Swagger UI by specifying its OpenAPI URL.
+The catalog and `with-schemas` endpoints are the intended discovery surface for humans and agent clients.
+`/api/backends/{backendName}/openapi.json` always returns JSON, even when the schema was originally uploaded in YAML.
 
 ## Resilience Configuration
 

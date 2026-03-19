@@ -66,8 +66,11 @@ curl http://localhost:8080/api/v1/my-service/endpoint \
 Open in browser:
 - **Swagger UI**: http://localhost:8080/swagger-ui.html
 - **API Docs**: http://localhost:8080/api-docs
+- **Backend OpenAPI Catalog**: http://localhost:8080/api/backends/catalog
 - **Health**: http://localhost:8080/actuator/health
 - **Metrics**: http://localhost:8080/actuator/metrics
+
+If you start the app locally with Maven instead of Docker, both `routing` and `fixture` profiles default to port `8080` unless you override `server.port`.
 
 ## 🛠 Development Setup
 
@@ -319,6 +322,7 @@ docker-compose logs -f backend-gateway-fixture
 
 ### Interactive
 - **Swagger UI**: http://localhost:8080/swagger-ui.html
+- **Backend OpenAPI Catalog**: http://localhost:8080/api/backends/catalog
 - **H2 Console** (routing mode): http://localhost:8080/h2-console
 
 ## 🎓 Concepts to Understand
