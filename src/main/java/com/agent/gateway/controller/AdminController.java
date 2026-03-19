@@ -1,6 +1,8 @@
 package com.agent.gateway.controller;
 
 import com.agent.gateway.dto.GuidedMockGenerationRequest;
+import com.agent.gateway.dto.MockEndpointDTO;
+import com.agent.gateway.dto.MockResponseDTO;
 import com.agent.gateway.dto.SchemaUploadRequest;
 import com.agent.gateway.entity.BackendConfig;
 import com.agent.gateway.entity.MockEndpoint;
@@ -23,6 +25,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/admin/api")
@@ -92,38 +95,43 @@ public class AdminController {
     
     @GetMapping("/mock-endpoints")
     @Operation(summary = "Get all mock endpoints")
-    public ResponseEntity<List<MockEndpoint>> getAllMockEndpoints() {
-        return ResponseEntity.ok(mockService.getAllMockEndpoints());
+    public ResponseEntity<List<MockEndpointDTO>> getAllMockEndpoints() {
+        return ResponseEntity.ok(mockService.getAllMockEndpoints().stream()
+                .map(this::toMockEndpointDto)
+                .collect(Collectors.toList()));
     }
 
     @GetMapping("/mock-endpoints/{id}")
     @Operation(summary = "Get mock endpoint by ID")
-    public ResponseEntity<MockEndpoint> getMockEndpointById(@PathVariable Long id) {
+    public ResponseEntity<MockEndpointDTO> getMockEndpointById(@PathVariable Long id) {
         return mockService.getMockEndpointById(id)
+                .map(this::toMockEndpointDto)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/mock-endpoints/backend/{backendName}")
     @Operation(summary = "Get mock endpoints by backend name")
-    public ResponseEntity<List<MockEndpoint>> getMockEndpointsByBackend(@PathVariable String backendName) {
-        return ResponseEntity.ok(mockService.getMockEndpointsByBackend(backendName));
+    public ResponseEntity<List<MockEndpointDTO>> getMockEndpointsByBackend(@PathVariable String backendName) {
+        return ResponseEntity.ok(mockService.getMockEndpointsByBackend(backendName).stream()
+                .map(this::toMockEndpointDto)
+                .collect(Collectors.toList()));
     }
 
     @PostMapping("/mock-endpoints")
     @Operation(summary = "Create new mock endpoint")
-    public ResponseEntity<MockEndpoint> createMockEndpoint(@RequestBody MockEndpoint mockEndpoint) {
+    public ResponseEntity<MockEndpointDTO> createMockEndpoint(@RequestBody MockEndpoint mockEndpoint) {
         MockEndpoint created = mockService.createMockEndpoint(mockEndpoint);
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toMockEndpointDto(created));
     }
 
     @PutMapping("/mock-endpoints/{id}")
     @Operation(summary = "Update mock endpoint")
-    public ResponseEntity<MockEndpoint> updateMockEndpoint(@PathVariable Long id, 
-                                                           @RequestBody MockEndpoint mockEndpoint) {
+    public ResponseEntity<MockEndpointDTO> updateMockEndpoint(@PathVariable Long id,
+                                                              @RequestBody MockEndpoint mockEndpoint) {
         try {
             MockEndpoint updated = mockService.updateMockEndpoint(id, mockEndpoint);
-            return ResponseEntity.ok(updated);
+            return ResponseEntity.ok(toMockEndpointDto(updated));
         } catch (IllegalArgumentException e) {
             log.error("Error updating mock endpoint", e);
             return ResponseEntity.notFound().build();
@@ -141,25 +149,28 @@ public class AdminController {
     
     @GetMapping("/mock-endpoints/{endpointId}/responses")
     @Operation(summary = "Get all responses for an endpoint")
-    public ResponseEntity<List<MockResponse>> getResponsesByEndpoint(@PathVariable Long endpointId) {
-        return ResponseEntity.ok(mockService.getResponsesByEndpoint(endpointId));
+    public ResponseEntity<List<MockResponseDTO>> getResponsesByEndpoint(@PathVariable Long endpointId) {
+        return ResponseEntity.ok(mockService.getResponsesByEndpoint(endpointId).stream()
+                .map(this::toMockResponseDto)
+                .collect(Collectors.toList()));
     }
 
     @GetMapping("/mock-responses/{id}")
     @Operation(summary = "Get mock response by ID")
-    public ResponseEntity<MockResponse> getMockResponseById(@PathVariable Long id) {
+    public ResponseEntity<MockResponseDTO> getMockResponseById(@PathVariable Long id) {
         return mockService.getMockResponseById(id)
+                .map(this::toMockResponseDto)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping("/mock-endpoints/{endpointId}/responses")
     @Operation(summary = "Create new mock response for an endpoint")
-    public ResponseEntity<MockResponse> createMockResponse(@PathVariable Long endpointId,
-                                                           @RequestBody MockResponse mockResponse) {
+    public ResponseEntity<MockResponseDTO> createMockResponse(@PathVariable Long endpointId,
+                                                              @RequestBody MockResponse mockResponse) {
         try {
             MockResponse created = mockService.createMockResponse(endpointId, mockResponse);
-            return ResponseEntity.status(HttpStatus.CREATED).body(created);
+            return ResponseEntity.status(HttpStatus.CREATED).body(toMockResponseDto(created));
         } catch (IllegalArgumentException e) {
             log.error("Error creating mock response", e);
             return ResponseEntity.badRequest().build();
@@ -168,11 +179,11 @@ public class AdminController {
 
     @PutMapping("/mock-responses/{id}")
     @Operation(summary = "Update mock response")
-    public ResponseEntity<MockResponse> updateMockResponse(@PathVariable Long id,
-                                                           @RequestBody MockResponse mockResponse) {
+    public ResponseEntity<MockResponseDTO> updateMockResponse(@PathVariable Long id,
+                                                              @RequestBody MockResponse mockResponse) {
         try {
             MockResponse updated = mockService.updateMockResponse(id, mockResponse);
-            return ResponseEntity.ok(updated);
+            return ResponseEntity.ok(toMockResponseDto(updated));
         } catch (IllegalArgumentException e) {
             log.error("Error updating mock response", e);
             return ResponseEntity.notFound().build();
@@ -375,5 +386,40 @@ public class AdminController {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", e.getMessage()));
         }
+    }
+
+    private MockEndpointDTO toMockEndpointDto(MockEndpoint endpoint) {
+        List<MockResponseDTO> responses = endpoint.getResponses() == null ? List.of() : endpoint.getResponses().stream()
+                .map(this::toMockResponseDto)
+                .collect(Collectors.toList());
+
+        return MockEndpointDTO.builder()
+                .id(endpoint.getId())
+                .backendName(endpoint.getBackendName())
+                .method(endpoint.getMethod())
+                .path(endpoint.getPath())
+                .description(endpoint.getDescription())
+                .openApiSchema(endpoint.getOpenApiSchema())
+                .enabled(endpoint.getEnabled())
+                .responses(responses)
+                .createdAt(endpoint.getCreatedAt())
+                .updatedAt(endpoint.getUpdatedAt())
+                .build();
+    }
+
+    private MockResponseDTO toMockResponseDto(MockResponse response) {
+        return MockResponseDTO.builder()
+                .id(response.getId())
+                .name(response.getName())
+                .matchConditions(response.getMatchConditions())
+                .httpStatus(response.getHttpStatus())
+                .responseBody(response.getResponseBody())
+                .responseHeaders(response.getResponseHeaders())
+                .priority(response.getPriority())
+                .enabled(response.getEnabled())
+                .delayMs(response.getDelayMs())
+                .createdAt(response.getCreatedAt())
+                .updatedAt(response.getUpdatedAt())
+                .build();
     }
 }

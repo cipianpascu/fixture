@@ -10,6 +10,8 @@ import com.agent.gateway.service.OpenApiSchemaService;
 import com.agent.gateway.service.ProxyService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.annotations.Hidden;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.models.OpenAPI;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ public class GatewayController {
     private final OpenApiSchemaService schemaService;
     private final ObjectMapper objectMapper;
 
+    @Hidden
     @RequestMapping(value = "/{backendName}/**", method = {RequestMethod.GET, RequestMethod.POST, 
             RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.PATCH, RequestMethod.OPTIONS})
     public ResponseEntity<String> handleRequest(@PathVariable String backendName,
@@ -162,6 +165,7 @@ public class GatewayController {
     }
 
     @GetMapping("/health")
+    @Operation(summary = "Get gateway health and active mode")
     public ResponseEntity<Map<String, Object>> health() {
         return ResponseEntity.ok(Map.of(
                 "status", "UP",
