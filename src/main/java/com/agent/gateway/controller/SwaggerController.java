@@ -73,7 +73,7 @@ public class SwaggerController {
     @GetMapping(value = "/{backendName}/openapi.json", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Get OpenAPI specification for a backend")
     @Hidden
-    public ResponseEntity<String> getOpenApiSpec(@PathVariable String backendName) {
+    public ResponseEntity<String> getOpenApiSpec(@PathVariable String backendName, HttpServletRequest request) {
         Optional<BackendConfig> backendOpt = backendConfigService.getBackendByName(backendName);
         
         if (backendOpt.isEmpty()) {
@@ -95,6 +95,10 @@ public class SwaggerController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("{\"error\":\"Backend has an invalid OpenAPI schema\"}");
         }
+
+        openAPI.setServers(List.of(new io.swagger.v3.oas.models.servers.Server()
+                .url(baseUrl(request) + "/api/v1/" + backendName)
+                .description("Gateway URL for backend " + backendName)));
         
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_JSON)

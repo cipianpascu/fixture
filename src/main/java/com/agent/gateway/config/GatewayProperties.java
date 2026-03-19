@@ -18,6 +18,7 @@ public class GatewayProperties {
 
     private GatewayMode mode = GatewayMode.ROUTING;
     private List<BackendDefinition> backends = new ArrayList<>();
+    private Cors cors = new Cors();
 
     @Data
     public static class BackendDefinition {
@@ -27,5 +28,15 @@ public class GatewayProperties {
         private SecurityType securityType;
         private Map<String, String> securityConfig = new HashMap<>();
         private Boolean enabled = true;
+    }
+
+    @Data
+    public static class Cors {
+        private List<String> allowedOriginPatterns = new ArrayList<>(List.of("*"));
+        private List<String> allowedMethods = new ArrayList<>(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+        private List<String> allowedHeaders = new ArrayList<>(List.of("*"));
+        private List<String> exposedHeaders = new ArrayList<>();
+        private Boolean allowCredentials = false;
+        private Long maxAge = 3600L;
     }
 }
