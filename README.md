@@ -266,6 +266,21 @@ Content-Type: application/json
   }
 }
 ```
+
+### Generate Responses for One Existing Mock Endpoint
+
+```bash
+POST /admin/api/mock-endpoints/1/generate-responses
+Content-Type: application/json
+
+{
+  "id": 1,
+  "name": "John Doe",
+  "users[].__size": 10
+}
+```
+
+This generates schema-based `MockResponse` records for one already-existing `MockEndpoint`.
 ### Validation Modes
 {{ ... }}
 - **WARN**: Allow operations but log warnings  

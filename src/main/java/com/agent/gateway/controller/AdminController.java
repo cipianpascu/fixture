@@ -347,6 +347,54 @@ public class AdminController {
         }
     }
 
+    @PostMapping("/mock-endpoints/{endpointId}/generate-responses")
+    @Operation(summary = "Generate mock responses from schema for one existing mock endpoint")
+    public ResponseEntity<Map<String, Object>> generateResponsesForEndpoint(
+            @PathVariable Long endpointId,
+            @RequestBody(required = false) Map<String, Object> guidedValues) {
+        try {
+            MockEndpoint endpoint = mockService.getMockEndpointById(endpointId)
+                    .orElseThrow(() -> new IllegalArgumentException("MockEndpoint not found with id: " + endpointId));
+
+            BackendConfig backend = backendConfigService.getBackendByName(endpoint.getBackendName())
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Backend not found for mock endpoint: " + endpoint.getBackendName()));
+
+            if (backend.getOpenApiSchema() == null) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Backend has no OpenAPI schema"));
+            }
+
+            io.swagger.v3.oas.models.OpenAPI openAPI =
+                    new io.swagger.v3.parser.OpenAPIV3Parser().readContents(
+                            backend.getOpenApiSchema(), null, null).getOpenAPI();
+
+            List<MockResponse> generatedResponses = new ArrayList<>();
+            List<MockResponse> responses = mockGeneratorService.generateMockResponses(
+                    endpoint, openAPI, guidedValues == null ? Map.of() : guidedValues);
+
+            for (MockResponse response : responses) {
+                MockResponse savedResponse = mockService.createMockResponse(endpointId, response);
+                generatedResponses.add(savedResponse);
+            }
+
+            List<MockResponseDTO> generatedResponseDtos = generatedResponses.stream()
+                    .map(this::toMockResponseDto)
+                    .collect(Collectors.toList());
+
+            return ResponseEntity.ok(Map.of(
+                    "endpointId", endpointId,
+                    "responsesGenerated", generatedResponses.size(),
+                    "responses", generatedResponseDtos,
+                    "message", "Successfully generated mock responses from schema"
+            ));
+        } catch (Exception e) {
+            log.error("Error generating mock responses for endpoint {}", endpointId, e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @PostMapping("/backends/{id}/generate-response")
     @Operation(summary = "Generate a single mock response with guided values")
     public ResponseEntity<Map<String, Object>> generateSingleResponse(

@@ -148,6 +148,28 @@ Content-Type: application/json
 }
 ```
 
+### Generate Responses for One Existing Mock Endpoint
+
+If you already created a `MockEndpoint` manually and only want schema-based responses for that one endpoint:
+
+```bash
+POST /admin/api/mock-endpoints/{endpointId}/generate-responses
+Content-Type: application/json
+
+{
+  "id": 123,
+  "name": "John Doe",
+  "items[].__size": 3
+}
+```
+
+This endpoint:
+1. Loads the existing mock endpoint
+2. Loads the backend's stored OpenAPI schema
+3. Finds the matching path and method in the schema
+4. Generates one `MockResponse` per declared response status code
+5. Saves the generated responses to that endpoint
+
 ### Guided Values Format
 
 Specify values for specific properties in the response:
