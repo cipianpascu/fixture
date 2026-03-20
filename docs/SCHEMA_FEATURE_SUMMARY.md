@@ -244,11 +244,8 @@ The OpenAPI Schema Support feature transforms the Backend Gateway from a simple 
 ```bash
 # 1. Upload an OpenAPI schema
 curl -X POST http://localhost:8080/admin/api/backends/1/schema \
-  -H "Content-Type: application/json" \
-  -d '{
-    "openApiSchema": "{ ... your OpenAPI 3.0 spec ... }",
-    "migrationOption": "REVALIDATE_AND_DISABLE"
-  }'
+  -F "schemaFile=@openapi.yaml" \
+  -F "migrationOption=REVALIDATE_AND_DISABLE"
 
 # 2. List backends with schemas
 curl http://localhost:8080/api/backends/with-schemas

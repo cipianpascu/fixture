@@ -233,13 +233,9 @@ Backend Gateway now supports OpenAPI 3.0 schemas for each backend, enabling powe
 ### Upload Schema
 
 ```bash
-POST /admin/api/backends/1/schema
-Content-Type: application/json
-
-{
-  "openApiSchema": "{ ... OpenAPI 3.0 spec ... }",
-  "migrationOption": "REVALIDATE_AND_DISABLE"
-}
+curl -X POST http://localhost:8080/admin/api/backends/1/schema \
+  -F "schemaFile=@openapi.yaml" \
+  -F "migrationOption=REVALIDATE_AND_DISABLE"
 ```
 
 ### Generate Schema from Manual Mocks

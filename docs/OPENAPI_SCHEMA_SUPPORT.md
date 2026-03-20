@@ -70,13 +70,9 @@ validationMode: OFF  # STRICT, WARN, or OFF
 ### Upload OpenAPI Schema
 
 ```bash
-POST /admin/api/backends/{id}/schema
-Content-Type: application/json
-
-{
-  "openApiSchema": "<OpenAPI 3.0 specification>",
-  "migrationOption": "REVALIDATE_AND_DISABLE"
-}
+curl -X POST http://localhost:8080/admin/api/backends/{id}/schema \
+  -F "schemaFile=@openapi.yaml" \
+  -F "migrationOption=REVALIDATE_AND_DISABLE"
 ```
 
 ### Migration Options
@@ -322,11 +318,8 @@ This loads the backend's OpenAPI spec into the standard Swagger UI.
 ```bash
 # 1. Upload OpenAPI schema
 curl -X POST http://localhost:8080/admin/api/backends/1/schema \
-  -H "Content-Type: application/json" \
-  -d '{
-    "openApiSchema": "{ ... }",
-    "migrationOption": "REVALIDATE_AND_DISABLE"
-  }'
+  -F "schemaFile=@openapi.yaml" \
+  -F "migrationOption=REVALIDATE_AND_DISABLE"
 
 # 2. List backends with schemas
 curl http://localhost:8080/api/backends/with-schemas
@@ -362,11 +355,8 @@ Design API with OpenAPI, then generate mocks:
 ```bash
 # 1. Upload OpenAPI schema
 curl -X POST http://localhost:8080/admin/api/backends/1/schema \
-  -H "Content-Type: application/json" \
-  -d '{
-    "openApiSchema": "{ ... OpenAPI 3.0 spec ... }",
-    "migrationOption": "REVALIDATE_AND_DISABLE"
-  }'
+  -F "schemaFile=@openapi.yaml" \
+  -F "migrationOption=REVALIDATE_AND_DISABLE"
 
 # 2. Enable strict validation
 curl -X PUT http://localhost:8080/admin/api/backends/1 \

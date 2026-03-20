@@ -17,10 +17,14 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -199,13 +203,23 @@ public class AdminController {
 
     // ============== OpenAPI Schema Management ==============
 
-    @PostMapping("/backends/{id}/schema")
+    @PostMapping(value = "/backends/{id}/schema", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload OpenAPI schema for a backend")
-    public ResponseEntity<BackendConfig> uploadSchema(@PathVariable Long id,
-                                                      @RequestBody SchemaUploadRequest request) {
+    public ResponseEntity<BackendConfig> uploadSchema(
+            @PathVariable Long id,
+            @RequestPart("schemaFile") MultipartFile schemaFile,
+            @RequestPart(value = "migrationOption", required = false) String migrationOption) {
         try {
+            SchemaUploadRequest request = SchemaUploadRequest.builder()
+                    .openApiSchema(new String(schemaFile.getBytes(), StandardCharsets.UTF_8))
+                    .migrationOption(parseMigrationOption(migrationOption))
+                    .build();
+
             BackendConfig updated = schemaManagementService.uploadSchema(id, request);
             return ResponseEntity.ok(updated);
+        } catch (IOException e) {
+            log.error("Error reading uploaded schema file", e);
+            return ResponseEntity.badRequest().build();
         } catch (IllegalArgumentException e) {
             log.error("Error uploading schema", e);
             return ResponseEntity.badRequest().build();
@@ -469,5 +483,13 @@ public class AdminController {
                 .createdAt(response.getCreatedAt())
                 .updatedAt(response.getUpdatedAt())
                 .build();
+    }
+
+    private SchemaUploadRequest.SchemaMigrationOption parseMigrationOption(String migrationOption) {
+        if (migrationOption == null || migrationOption.isBlank()) {
+            return null;
+        }
+
+        return SchemaUploadRequest.SchemaMigrationOption.valueOf(migrationOption.trim().toUpperCase());
     }
 }
