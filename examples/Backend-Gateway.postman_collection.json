@@ -278,7 +278,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Success Response\",\n  \"matchConditions\": \"{}\",\n  \"httpStatus\": 200,\n  \"responseBody\": \"[{\\\"id\\\":1,\\\"name\\\":\\\"John Doe\\\",\\\"email\\\":\\\"john@example.com\\\"}]\",\n  \"responseHeaders\": \"{\\\"Content-Type\\\":\\\"application/json\\\"}\",\n  \"priority\": 10,\n  \"enabled\": true,\n  \"delayMs\": 100\n}"
+              "raw": "{\n  \"mockEndpointId\": 1,\n  \"name\": \"Success Response\",\n  \"matchConditions\": \"{}\",\n  \"httpStatus\": 200,\n  \"responseBody\": \"[{\\\"id\\\":1,\\\"name\\\":\\\"John Doe\\\",\\\"email\\\":\\\"john@example.com\\\"}]\",\n  \"responseHeaders\": \"{\\\"Content-Type\\\":\\\"application/json\\\"}\",\n  \"priority\": 10,\n  \"enabled\": true,\n  \"delayMs\": 100\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/admin/api/mock-endpoints/1/responses",

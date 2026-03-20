@@ -107,7 +107,7 @@ public class SwaggerController {
 
     private BackendOpenApiDescriptorDTO toDescriptor(BackendConfig backend, HttpServletRequest request) {
         String openapiPath = "/api/backends/" + backend.getName() + "/openapi.json";
-        String swaggerPath = "/swagger-ui.html?url=" + openapiPath;
+        String swaggerPath = "/swagger-ui/index.html?url=" + openapiPath;
         OpenAPI openAPI = new OpenAPIV3Parser().readContents(backend.getOpenApiSchema(), null, null).getOpenAPI();
 
         return BackendOpenApiDescriptorDTO.builder()

@@ -1,116 +1,157 @@
 #!/bin/bash
 
-# Example script to create a complete mock setup via Admin API
-# Run in fixture mode
+set -euo pipefail
 
-BASE_URL="http://localhost:8080"
+# Example script that demonstrates both supported fixture-mode workflows:
+# 1. Manual: create backend -> endpoint -> response
+# 2. Schema: create backend -> upload OpenAPI -> generate mocks
 
-echo "Creating backend configuration..."
-BACKEND_RESPONSE=$(curl -s -X POST "$BASE_URL/admin/api/backends" \
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "Missing required command: $1" >&2
+    exit 1
+  }
+}
+
+require_command curl
+require_command jq
+
+echo "Base URL: $BASE_URL"
+echo
+
+echo "=== Manual workflow ==="
+
+MANUAL_BACKEND=$(curl -sS -X POST "$BASE_URL/admin/api/backends" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "user-service",
-    "baseUrl": "http://localhost:9001",
-    "path": "/api/v1/users",
-    "securityType": "JWT",
+    "name": "manual-example-service",
+    "baseUrl": "http://example.internal",
+    "path": "/api/manual",
+    "securityType": "NONE",
     "securityConfig": "{}",
     "enabled": true
   }')
 
-echo "Backend created: $BACKEND_RESPONSE"
-echo ""
+MANUAL_BACKEND_ID=$(echo "$MANUAL_BACKEND" | jq -r '.id')
+echo "Created backend manual-example-service with id $MANUAL_BACKEND_ID"
 
-echo "Creating mock endpoint for GET /users..."
-ENDPOINT_RESPONSE=$(curl -s -X POST "$BASE_URL/admin/api/mock-endpoints" \
+MANUAL_ENDPOINT=$(curl -sS -X POST "$BASE_URL/admin/api/mock-endpoints" \
   -H "Content-Type: application/json" \
   -d '{
-    "backendName": "user-service",
-    "method": "GET",
-    "path": "/users",
-    "description": "Get all users",
-    "enabled": true
-  }')
-
-ENDPOINT_ID=$(echo $ENDPOINT_RESPONSE | jq -r '.id')
-echo "Mock endpoint created with ID: $ENDPOINT_ID"
-echo ""
-
-echo "Creating mock response - Success case..."
-curl -s -X POST "$BASE_URL/admin/api/mock-endpoints/$ENDPOINT_ID/responses" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Success - List of users",
-    "matchConditions": "{}",
-    "httpStatus": 200,
-    "responseBody": "[{\"id\":1,\"name\":\"John Doe\",\"email\":\"john@example.com\"},{\"id\":2,\"name\":\"Jane Smith\",\"email\":\"jane@example.com\"}]",
-    "responseHeaders": "{\"Content-Type\":\"application/json\",\"X-Total-Count\":\"2\"}",
-    "priority": 10,
-    "enabled": true,
-    "delayMs": 100
-  }'
-
-echo ""
-echo "Creating mock endpoint for GET /users/{id}..."
-ENDPOINT2_RESPONSE=$(curl -s -X POST "$BASE_URL/admin/api/mock-endpoints" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "backendName": "user-service",
+    "backendName": "manual-example-service",
     "method": "GET",
     "path": "/users/{id}",
-    "description": "Get user by ID",
+    "description": "Get one user manually",
     "enabled": true
   }')
 
-ENDPOINT2_ID=$(echo $ENDPOINT2_RESPONSE | jq -r '.id')
-echo "Mock endpoint created with ID: $ENDPOINT2_ID"
-echo ""
+MANUAL_ENDPOINT_ID=$(echo "$MANUAL_ENDPOINT" | jq -r '.id')
+echo "Created endpoint /users/{id} with id $MANUAL_ENDPOINT_ID"
 
-echo "Creating mock response - User found..."
-curl -s -X POST "$BASE_URL/admin/api/mock-endpoints/$ENDPOINT2_ID/responses" \
+curl -sS -X POST "$BASE_URL/admin/api/mock-endpoints/$MANUAL_ENDPOINT_ID/responses" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"mockEndpointId\": $MANUAL_ENDPOINT_ID,
+    \"name\": \"User found\",
+    \"matchConditions\": \"{}\",
+    \"httpStatus\": 200,
+    \"responseBody\": \"{\\\"id\\\":1,\\\"name\\\":\\\"Manual Alice\\\",\\\"tier\\\":\\\"gold\\\"}\",
+    \"responseHeaders\": \"{\\\"Content-Type\\\":\\\"application/json\\\",\\\"X-Source\\\":\\\"manual-example\\\"}\",
+    \"priority\": 10,
+    \"enabled\": true,
+    \"delayMs\": 5
+  }" | jq .
+
+echo
+echo "Manual gateway check:"
+curl -sS "$BASE_URL/api/v1/manual-example-service/users/1" | jq .
+
+echo
+echo "=== Schema workflow ==="
+
+SCHEMA_BACKEND=$(curl -sS -X POST "$BASE_URL/admin/api/backends" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "User found",
-    "matchConditions": "{}",
-    "httpStatus": 200,
-    "responseBody": "{\"id\":1,\"name\":\"John Doe\",\"email\":\"john@example.com\",\"role\":\"admin\"}",
-    "responseHeaders": "{\"Content-Type\":\"application/json\"}",
-    "priority": 10,
-    "enabled": true,
-    "delayMs": 50
-  }'
-
-echo ""
-echo "Creating mock endpoint for POST /users..."
-ENDPOINT3_RESPONSE=$(curl -s -X POST "$BASE_URL/admin/api/mock-endpoints" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "backendName": "user-service",
-    "method": "POST",
-    "path": "/users",
-    "description": "Create new user",
+    "name": "schema-example-service",
+    "baseUrl": "http://upstream.internal",
+    "path": "/api/schema",
+    "securityType": "NONE",
+    "securityConfig": "{}",
     "enabled": true
   }')
 
-ENDPOINT3_ID=$(echo $ENDPOINT3_RESPONSE | jq -r '.id')
-echo "Mock endpoint created with ID: $ENDPOINT3_ID"
-echo ""
+SCHEMA_BACKEND_ID=$(echo "$SCHEMA_BACKEND" | jq -r '.id')
+echo "Created backend schema-example-service with id $SCHEMA_BACKEND_ID"
 
-echo "Creating mock response - User created..."
-curl -s -X POST "$BASE_URL/admin/api/mock-endpoints/$ENDPOINT3_ID/responses" \
+SCHEMA_FILE=$(mktemp)
+cat <<'EOF' >"$SCHEMA_FILE"
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Schema Example API",
+    "version": "1.0.0",
+    "description": "Generated example API"
+  },
+  "paths": {
+    "/users": {
+      "get": {
+        "summary": "List users",
+        "responses": {
+          "200": {
+            "description": "Users list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "integer" },
+                      "name": { "type": "string" },
+                      "email": { "type": "string", "format": "email" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+EOF
+
+curl -sS -X POST "$BASE_URL/admin/api/backends/$SCHEMA_BACKEND_ID/schema" \
+  -F "schemaFile=@$SCHEMA_FILE;type=application/json" \
+  -F "migrationOption=REVALIDATE_AND_DISABLE" | jq .
+
+curl -sS -X POST "$BASE_URL/admin/api/backends/$SCHEMA_BACKEND_ID/generate-mocks" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "User created successfully",
-    "matchConditions": "{}",
-    "httpStatus": 201,
-    "responseBody": "{\"id\":3,\"name\":\"New User\",\"email\":\"new@example.com\",\"message\":\"User created successfully\"}",
-    "responseHeaders": "{\"Content-Type\":\"application/json\",\"Location\":\"/api/v1/users/3\"}",
-    "priority": 10,
-    "enabled": true,
-    "delayMs": 150
-  }'
+    "generateEndpoints": true,
+    "generateResponses": true,
+    "guidedValues": {
+      "[].__size": 2,
+      "[0].id": 101,
+      "[0].name": "Schema Alice",
+      "[0].email": "schema.alice@example.com",
+      "[1].id": 102,
+      "[1].name": "Schema Bob",
+      "[1].email": "schema.bob@example.com"
+    }
+  }' | jq .
 
-echo ""
-echo "Setup complete! Test with:"
-echo "curl http://localhost:8080/api/v1/user-service/users"
-echo "curl http://localhost:8080/api/v1/user-service/users/1"
-echo "curl -X POST http://localhost:8080/api/v1/user-service/users -H 'Content-Type: application/json' -d '{\"name\":\"Test\"}'"
+echo
+echo "Schema gateway check:"
+curl -sS "$BASE_URL/api/v1/schema-example-service/users" | jq .
+
+echo
+echo "Discovery:"
+curl -sS "$BASE_URL/api/backends/catalog" | jq .
+
+echo
+echo "Swagger UI:"
+echo "$BASE_URL/swagger-ui/index.html?url=/api/backends/schema-example-service/openapi.json"

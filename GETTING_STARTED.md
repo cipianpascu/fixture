@@ -64,7 +64,7 @@ curl http://localhost:8080/api/v1/my-service/endpoint \
 ### Path C: I Want to Explore the API
 
 Open in browser:
-- **Swagger UI**: http://localhost:8080/swagger-ui.html
+- **Swagger UI**: http://localhost:8080/swagger-ui/index.html
 - **API Docs**: http://localhost:8080/api-docs
 - **Backend OpenAPI Catalog**: http://localhost:8080/api/backends/catalog
 - **Health**: http://localhost:8080/actuator/health
@@ -158,9 +158,11 @@ curl -X POST http://localhost:8081/admin/api/mock-endpoints \
 curl -X POST http://localhost:8081/admin/api/mock-endpoints/1/responses \
   -H "Content-Type: application/json" \
   -d '{
+    "mockEndpointId": 1,
     "name": "Success",
     "httpStatus": 200,
     "responseBody": "{\"result\":\"success\"}",
+    "responseHeaders": "{\"Content-Type\":\"application/json\"}",
     "priority": 10,
     "enabled": true
   }'
@@ -203,10 +205,12 @@ curl -X PUT http://localhost:8081/admin/api/mock-responses/1 \
 curl -X POST http://localhost:8081/admin/api/mock-endpoints/1/responses \
   -H "Content-Type: application/json" \
   -d '{
+    "mockEndpointId": 1,
     "name": "Admin Response",
     "matchConditions": "{\"headers\":{\"X-User-Role\":\"admin\"}}",
     "httpStatus": 200,
     "responseBody": "{\"data\":\"admin-only-data\"}",
+    "responseHeaders": "{\"Content-Type\":\"application/json\"}",
     "priority": 20,
     "enabled": true
   }'
@@ -321,7 +325,7 @@ docker-compose logs -f backend-gateway-fixture
 - **examples/Backend-Gateway.postman_collection.json** - Postman collection
 
 ### Interactive
-- **Swagger UI**: http://localhost:8080/swagger-ui.html
+- **Swagger UI**: http://localhost:8080/swagger-ui/index.html
 - **Backend OpenAPI Catalog**: http://localhost:8080/api/backends/catalog
 - **H2 Console** (routing mode): http://localhost:8080/h2-console
 

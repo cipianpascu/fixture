@@ -153,9 +153,10 @@ POST /admin/api/mock-endpoints/{endpointId}/generate-responses
 Content-Type: application/json
 
 {
-  "id": 123,
-  "name": "John Doe",
-  "items[].__size": 3
+  "[].__size": 1,
+  "[0].id": 501,
+  "[0].name": "Existing Endpoint User",
+  "[0].email": "existing@example.com"
 }
 ```
 
@@ -372,9 +373,15 @@ curl -X POST http://localhost:8080/admin/api/backends/1/generate-mocks \
     "generateEndpoints": true,
     "generateResponses": true,
     "guidedValues": {
-      "id": 1,
-      "name": "John Doe",
-      "users[].__size": 10
+      "[].__size": 2,
+      "[0].id": 101,
+      "[0].name": "Schema Alice",
+      "[0].email": "schema.alice@example.com",
+      "[1].id": 102,
+      "[1].name": "Schema Bob",
+      "[1].email": "schema.bob@example.com",
+      "id": 777,
+      "name": "Generated User"
     }
   }'
 
@@ -413,9 +420,11 @@ curl -X POST http://localhost:8080/admin/api/mock-endpoints \
 curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
   -H "Content-Type: application/json" \
   -d '{
+    "mockEndpointId": 1,
     "name": "Success",
     "httpStatus": 200,
     "responseBody": "{\"users\":[{\"id\":1,\"name\":\"John Doe\",\"email\":\"john@example.com\"}]}",
+    "responseHeaders": "{\"Content-Type\":\"application/json\"}",
     "priority": 10,
     "enabled": true
   }'

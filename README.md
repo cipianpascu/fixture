@@ -172,6 +172,7 @@ curl http://localhost:8080/admin/api/mock-endpoints/backend/user-service
 curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
   -H "Content-Type: application/json" \
   -d '{
+    "mockEndpointId": 1,
     "name": "Success Response",
     "matchConditions": "{\"queryParams\":{\"status\":\"active\"}}",
     "httpStatus": 200,
@@ -249,31 +250,36 @@ Automatically generates OpenAPI 3.0 schema from existing mock endpoints and resp
 ### Generate Mocks from Schema
 
 ```bash
-POST /admin/api/backends/1/generate-mocks
-Content-Type: application/json
-
-{
-  "generateEndpoints": true,
-  "generateResponses": true,
-  "guidedValues": {
-    "id": 1,
-    "name": "John Doe",
-    "users[].__size": 10
-  }
-}
+curl -X POST http://localhost:8080/admin/api/backends/1/generate-mocks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "generateEndpoints": true,
+    "generateResponses": true,
+    "guidedValues": {
+      "[].__size": 2,
+      "[0].id": 101,
+      "[0].name": "Schema Alice",
+      "[0].email": "schema.alice@example.com",
+      "[1].id": 102,
+      "[1].name": "Schema Bob",
+      "[1].email": "schema.bob@example.com",
+      "id": 777,
+      "name": "Generated User"
+    }
+  }'
 ```
 
 ### Generate Responses for One Existing Mock Endpoint
 
 ```bash
-POST /admin/api/mock-endpoints/1/generate-responses
-Content-Type: application/json
-
-{
-  "id": 1,
-  "name": "John Doe",
-  "users[].__size": 10
-}
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/generate-responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "[].__size": 1,
+    "[0].id": 501,
+    "[0].name": "Existing Endpoint User",
+    "[0].email": "existing@example.com"
+  }'
 ```
 
 This generates schema-based `MockResponse` records for one already-existing `MockEndpoint`.
@@ -294,14 +300,14 @@ This generates schema-based `MockResponse` records for one already-existing `Moc
 ### Swagger UI
 
 **Global Gateway Documentation:**
-- Main Swagger UI: `http://localhost:8080/swagger-ui.html`
+- Main Swagger UI: `http://localhost:8080/swagger-ui/index.html`
 - Global `/api-docs` documents the admin API and discovery endpoints. The catch-all gateway dispatcher is intentionally not exposed as a concrete OpenAPI operation.
 
 **Per-Backend OpenAPI Documentation:**
 - Agent-friendly catalog: `http://localhost:8080/api/backends/catalog`
 - List backends with schemas: `http://localhost:8080/api/backends/with-schemas`
 - Get backend OpenAPI spec: `http://localhost:8080/api/backends/{backendName}/openapi.json`
-- View in Swagger UI: `http://localhost:8080/swagger-ui.html?url=/api/backends/{backendName}/openapi.json`
+- View in Swagger UI: `http://localhost:8080/swagger-ui/index.html?url=/api/backends/{backendName}/openapi.json`
 
 Each backend with an uploaded OpenAPI schema can be viewed in the standard Swagger UI by specifying its OpenAPI URL.
 The catalog and `with-schemas` endpoints are the intended discovery surface for humans and agent clients.

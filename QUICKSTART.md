@@ -116,6 +116,7 @@ curl -X POST http://localhost:8080/admin/api/mock-endpoints \
 curl -X POST http://localhost:8080/admin/api/mock-endpoints/{endpoint-id}/responses \
   -H "Content-Type: application/json" \
   -d '{
+    "mockEndpointId": {endpoint-id},
     "name": "Success",
     "httpStatus": 200,
     "responseBody": "{\"message\":\"Hello World\"}",
@@ -132,10 +133,11 @@ curl http://localhost:8080/api/v1/test-service/hello
 
 ## Access Swagger UI
 
-Open your browser: `http://localhost:8080/swagger-ui.html`
+Open your browser: `http://localhost:8080/swagger-ui/index.html`
 
 For per-backend discovery, use `http://localhost:8080/api/backends/catalog` or `http://localhost:8080/api/backends/with-schemas`.
 Per-backend OpenAPI documents are available at `http://localhost:8080/api/backends/{backendName}/openapi.json` and are always returned as JSON.
+The verified per-backend deep link is `http://localhost:8080/swagger-ui/index.html?url=/api/backends/{backendName}/openapi.json`.
 
 ## Access H2 Console (Routing Mode Only)
 

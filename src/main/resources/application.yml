@@ -102,3 +102,4 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     enabled: true
+    query-config-enabled: true

@@ -1,93 +1,66 @@
 #!/bin/bash
 
-# Test script for Backend Gateway
-# Usage: ./test-requests.sh [routing|fixture]
+set -euo pipefail
 
-MODE=${1:-fixture}
-BASE_URL="http://localhost:8080"
+# Smoke-test script for the current fixture-mode API surface.
+# Assumes the example services created by create-mock-example.sh already exist.
 
-echo "==============================================="
-echo "Testing Backend Gateway in $MODE mode"
-echo "==============================================="
-echo ""
+BASE_URL="${BASE_URL:-http://localhost:8080}"
 
-# Test health endpoint
-echo "1. Testing health endpoint..."
-curl -s "$BASE_URL/api/v1/health" | jq '.'
-echo ""
-echo ""
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "Missing required command: $1" >&2
+    exit 1
+  }
+}
 
-# Test GET request
-echo "2. Testing GET /api/v1/user-service/users..."
-curl -s "$BASE_URL/api/v1/user-service/users" \
-  -H "Authorization: Bearer fake-jwt-token" | jq '.'
-echo ""
-echo ""
-
-# Test GET request with ID
-echo "3. Testing GET /api/v1/user-service/users/1..."
-curl -s "$BASE_URL/api/v1/user-service/users/1" \
-  -H "Authorization: Bearer fake-jwt-token" | jq '.'
-echo ""
-echo ""
-
-# Test POST request
-echo "4. Testing POST /api/v1/user-service/users..."
-curl -s -X POST "$BASE_URL/api/v1/user-service/users" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer fake-jwt-token" \
-  -d '{
-    "name": "Test User",
-    "email": "test@example.com"
-  }' | jq '.'
-echo ""
-echo ""
-
-# Test with query parameters
-echo "5. Testing GET with query parameters..."
-curl -s "$BASE_URL/api/v1/user-service/users?status=active&role=admin" \
-  -H "Authorization: Bearer fake-jwt-token" | jq '.'
-echo ""
-echo ""
-
-# Test non-existent backend
-echo "6. Testing non-existent backend..."
-curl -s "$BASE_URL/api/v1/non-existent-service/test"
-echo ""
-echo ""
+require_command curl
+require_command jq
 
 echo "==============================================="
-echo "Testing Admin API (Fixture mode only)"
+echo "Testing Backend Gateway at $BASE_URL"
 echo "==============================================="
-echo ""
+echo
 
-# List all backends
-echo "7. Listing all backends..."
-curl -s "$BASE_URL/admin/api/backends" | jq '.'
-echo ""
-echo ""
+echo "1. Health endpoint"
+curl -sS "$BASE_URL/api/v1/health" | jq .
+echo
 
-# List all mock endpoints
-echo "8. Listing all mock endpoints..."
-curl -s "$BASE_URL/admin/api/mock-endpoints" | jq '.'
-echo ""
-echo ""
+echo "2. Actuator health"
+curl -sS "$BASE_URL/actuator/health" | jq .
+echo
 
-echo "==============================================="
-echo "Testing Actuator endpoints"
-echo "==============================================="
-echo ""
+echo "3. Backend discovery catalog"
+curl -sS "$BASE_URL/api/backends/catalog" | jq .
+echo
 
-# Health check
-echo "9. Actuator health..."
-curl -s "$BASE_URL/actuator/health" | jq '.'
-echo ""
-echo ""
+echo "4. Backend descriptors"
+curl -sS "$BASE_URL/api/backends/with-schemas" | jq .
+echo
 
-# Metrics
-echo "10. Available metrics..."
-curl -s "$BASE_URL/actuator/metrics" | jq '.names | .[:10]'
-echo ""
-echo ""
+echo "5. Manual mock endpoint"
+curl -sS "$BASE_URL/api/v1/manual-example-service/users/1" | jq .
+echo
 
-echo "Tests completed!"
+echo "6. Schema-generated endpoint"
+curl -sS "$BASE_URL/api/v1/schema-example-service/users" | jq .
+echo
+
+echo "7. Schema OpenAPI document"
+curl -sS "$BASE_URL/api/backends/schema-example-service/openapi.json" | jq '{title:.info.title, server:.servers[0].url, paths:(.paths | keys)}'
+echo
+
+echo "8. Admin backends"
+curl -sS "$BASE_URL/admin/api/backends" | jq .
+echo
+
+echo "9. Manual backend endpoints"
+curl -sS "$BASE_URL/admin/api/mock-endpoints/backend/manual-example-service" | jq .
+echo
+
+echo "10. Schema backend endpoints"
+curl -sS "$BASE_URL/admin/api/mock-endpoints/backend/schema-example-service" | jq .
+echo
+
+echo "11. Swagger UI deep link"
+echo "$BASE_URL/swagger-ui/index.html?url=/api/backends/schema-example-service/openapi.json"
