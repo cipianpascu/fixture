@@ -23,10 +23,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
@@ -227,6 +224,36 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    // ============== Response Cloning ==============
+
+    @PostMapping("/mock-responses/{responseId}/clone")
+    @Operation(summary = "Clone a response to another endpoint")
+    public ResponseEntity<MockResponseDTO> cloneResponse(
+            @PathVariable Long responseId,
+            @RequestParam Long targetEndpointId) {
+        MockResponse cloned = mockService.cloneResponse(responseId, targetEndpointId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toMockResponseDto(cloned));
+    }
+
+    @PostMapping("/mock-endpoints/{sourceEndpointId}/clone-responses")
+    @Operation(summary = "Clone all responses from one endpoint to another")
+    public ResponseEntity<Map<String, Object>> cloneAllResponses(
+            @PathVariable Long sourceEndpointId,
+            @RequestParam Long targetEndpointId) {
+        List<MockResponse> clonedResponses = mockService.cloneAllResponses(sourceEndpointId, targetEndpointId);
+        
+        List<MockResponseDTO> responseDtos = clonedResponses.stream()
+                .map(this::toMockResponseDto)
+                .collect(Collectors.toList());
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("clonedCount", clonedResponses.size());
+        result.put("responses", responseDtos);
+        result.put("message", "Successfully cloned " + clonedResponses.size() + " responses");
+        
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
+    }
+
     // ============== OpenAPI Schema Management ==============
 
     @PostMapping(value = "/backends/{id}/schema", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -354,13 +381,26 @@ public class AdminController {
                 new io.swagger.v3.parser.OpenAPIV3Parser().readContents(
                         backend.getOpenApiSchema(), null, null).getOpenAPI();
 
-        List<MockEndpoint> generatedEndpoints = new ArrayList<>();
+        List<MockEndpoint> allEndpoints = new ArrayList<>();
         List<MockResponse> generatedResponses = new ArrayList<>();
+        Set<Long> preExistingEndpointIds = new HashSet<>();
 
         if (request.isGenerateEndpoints()) {
-            generatedEndpoints = mockGeneratorService.generateMockEndpoints(backend, openAPI);
-            for (MockEndpoint endpoint : generatedEndpoints) {
-                MockEndpoint saved = mockService.createMockEndpoint(endpoint);
+            List<MockEndpoint> templateEndpoints = mockGeneratorService.generateMockEndpoints(backend, openAPI);
+            
+            for (MockEndpoint endpoint : templateEndpoints) {
+                // Check if endpoint already exists before creating
+                Optional<MockEndpoint> existing = mockService.getMockEndpointsByBackend(backend.getName()).stream()
+                        .filter(e -> e.getMethod().equals(endpoint.getMethod()) && e.getPath().equals(endpoint.getPath()))
+                        .findFirst();
+                
+                if (existing.isPresent()) {
+                    preExistingEndpointIds.add(existing.get().getId());
+                }
+                
+                // Use createOrGetMockEndpoint for idempotent behavior
+                MockEndpoint saved = mockService.createOrGetMockEndpoint(endpoint);
+                allEndpoints.add(saved);
                 
                 if (request.isGenerateResponses()) {
                     List<MockResponse> responses = mockGeneratorService.generateMockResponses(
@@ -373,18 +413,25 @@ public class AdminController {
             }
         }
 
-        List<MockEndpointDTO> endpointDtos = generatedEndpoints.stream()
+        int newEndpoints = allEndpoints.size() - preExistingEndpointIds.size();
+        int reusedEndpoints = preExistingEndpointIds.size();
+
+        List<MockEndpointDTO> endpointDtos = allEndpoints.stream()
                 .map(this::toMockEndpointDto)
                 .collect(Collectors.toList());
 
-        log.info("Generated {} endpoints and {} responses for backend: {} (id: {})", 
-                generatedEndpoints.size(), generatedResponses.size(), backend.getName(), id);
+        String message = String.format("Generated %d new endpoint(s), reused %d existing endpoint(s), created %d response(s)",
+                newEndpoints, reusedEndpoints, generatedResponses.size());
+        
+        log.info("Mock generation for backend {} (id: {}): {} new endpoints, {} reused endpoints, {} responses", 
+                backend.getName(), id, newEndpoints, reusedEndpoints, generatedResponses.size());
 
         MockGenerationResult result = MockGenerationResult.builder()
-                .endpointsGenerated(generatedEndpoints.size())
+                .endpointsGenerated(newEndpoints)
+                .endpointsReused(reusedEndpoints)
                 .responsesGenerated(generatedResponses.size())
                 .endpoints(endpointDtos)
-                .message("Successfully generated mocks from schema")
+                .message(message)
                 .build();
 
         return ResponseEntity.ok(result);

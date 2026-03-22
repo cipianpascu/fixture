@@ -16,6 +16,7 @@ import java.util.List;
 @AllArgsConstructor
 public class MockGenerationResult {
     private Integer endpointsGenerated;
+    private Integer endpointsReused;
     private Integer responsesGenerated;
     private List<MockEndpointDTO> endpoints;
     private String message;

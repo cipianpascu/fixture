@@ -197,6 +197,61 @@ Create multiple responses with different priorities and match conditions:
 }
 ```
 
+### 4. Clone Responses to Multiple Endpoints
+
+Reuse responses across endpoints without duplication:
+
+**Clone a single response to another endpoint:**
+```bash
+# Clone response ID 10 to endpoint ID 5
+curl -X POST "http://localhost:8080/admin/api/mock-responses/10/clone?targetEndpointId=5"
+```
+
+**Clone all responses from one endpoint to another:**
+```bash
+# Clone all responses from endpoint 1 to endpoint 5
+curl -X POST "http://localhost:8080/admin/api/mock-endpoints/1/clone-responses?targetEndpointId=5"
+```
+
+**Response:**
+```json
+{
+  "clonedCount": 3,
+  "responses": [...],
+  "message": "Successfully cloned 3 responses"
+}
+```
+
+**Use Case - Standard Error Responses:**
+```bash
+# 1. Create a template endpoint with standard errors
+curl -X POST http://localhost:8080/admin/api/mock-endpoints \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backendName": "templates",
+    "method": "GET",
+    "path": "/error-templates",
+    "enabled": false
+  }'
+# Returns: {"id": 999, ...}
+
+# 2. Add standard error responses (404, 403, 500)
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/999/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "404 Not Found",
+    "httpStatus": 404,
+    "responseBody": "{\"error\":\"Resource not found\"}",
+    "priority": 10,
+    "enabled": true
+  }'
+
+# 3. Clone to all your endpoints
+curl -X POST "http://localhost:8080/admin/api/mock-endpoints/999/clone-responses?targetEndpointId=1"
+curl -X POST "http://localhost:8080/admin/api/mock-endpoints/999/clone-responses?targetEndpointId=2"
+# Now all endpoints have consistent error handling!
+```
+
 ## Stopping Services
 
 ### Docker Compose
@@ -242,9 +297,10 @@ docker run -d -p 5432:5432 \
 
 1. Read the full [README.md](README.md) for detailed documentation
 2. Explore the Admin API via Swagger UI
-3. Set up your production backends in routing mode
-4. Create comprehensive mocks for your test environments
-5. Integrate with your CI/CD pipeline
+3. Learn about [Response Cloning](docs/RESPONSE_CLONING.md) for advanced mock management
+4. Set up your production backends in routing mode
+5. Create comprehensive mocks for your test environments
+6. Integrate with your CI/CD pipeline
 
 ## Support
 

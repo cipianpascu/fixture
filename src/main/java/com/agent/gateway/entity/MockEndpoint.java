@@ -11,7 +11,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "mock_endpoint")
+@Table(name = "mock_endpoint",
+       uniqueConstraints = @UniqueConstraint(
+           columnNames = {"backend_name", "method", "path"},
+           name = "uk_endpoint_backend_method_path"
+       ))
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

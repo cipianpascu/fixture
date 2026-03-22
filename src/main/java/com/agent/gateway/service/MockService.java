@@ -124,6 +124,39 @@ public class MockService {
         return mockEndpointRepository.save(mockEndpoint);
     }
 
+    /**
+     * Create a mock endpoint or return existing one if it already exists
+     * (idempotent operation for schema-based generation)
+     */
+    @Transactional
+    public MockEndpoint createOrGetMockEndpoint(MockEndpoint mockEndpoint) {
+        Optional<MockEndpoint> existing = mockEndpointRepository.findByBackendNameAndMethodAndPath(
+                mockEndpoint.getBackendName(),
+                mockEndpoint.getMethod(),
+                mockEndpoint.getPath()
+        );
+        
+        if (existing.isPresent()) {
+            log.debug("Endpoint already exists: {} {} on {}, reusing existing (id: {})",
+                    mockEndpoint.getMethod(), mockEndpoint.getPath(), mockEndpoint.getBackendName(), existing.get().getId());
+            
+            // Optionally update description and schema if provided
+            MockEndpoint existingEndpoint = existing.get();
+            if (mockEndpoint.getDescription() != null) {
+                existingEndpoint.setDescription(mockEndpoint.getDescription());
+            }
+            if (mockEndpoint.getOpenApiSchema() != null) {
+                existingEndpoint.setOpenApiSchema(mockEndpoint.getOpenApiSchema());
+            }
+            
+            return mockEndpointRepository.save(existingEndpoint);
+        }
+        
+        log.info("Creating new endpoint: {} {} on {}",
+                mockEndpoint.getMethod(), mockEndpoint.getPath(), mockEndpoint.getBackendName());
+        return mockEndpointRepository.save(mockEndpoint);
+    }
+
     public List<MockEndpoint> getAllMockEndpoints() {
         return mockEndpointRepository.findAll();
     }
@@ -197,6 +230,78 @@ public class MockService {
     @Transactional
     public void deleteMockResponse(Long id) {
         mockResponseRepository.deleteById(id);
+    }
+
+    /**
+     * Clone a single response to another endpoint
+     */
+    @Transactional
+    public MockResponse cloneResponse(Long responseId, Long targetEndpointId) {
+        MockResponse source = mockResponseRepository.findById(responseId)
+                .orElseThrow(() -> new IllegalArgumentException("Source response not found with id: " + responseId));
+        
+        MockEndpoint targetEndpoint = mockEndpointRepository.findById(targetEndpointId)
+                .orElseThrow(() -> new IllegalArgumentException("Target endpoint not found with id: " + targetEndpointId));
+        
+        MockResponse cloned = MockResponse.builder()
+                .mockEndpoint(targetEndpoint)
+                .name(source.getName() + " (copy)")
+                .matchConditions(source.getMatchConditions())
+                .httpStatus(source.getHttpStatus())
+                .responseBody(source.getResponseBody())
+                .responseHeaders(source.getResponseHeaders())
+                .priority(source.getPriority())
+                .enabled(source.getEnabled())
+                .delayMs(source.getDelayMs())
+                .build();
+        
+        // Validate against target endpoint's schema
+        validateMockResponse(targetEndpoint, cloned);
+        
+        log.info("Cloned response '{}' (id: {}) to endpoint {} (id: {})", 
+                source.getName(), responseId, targetEndpoint.getPath(), targetEndpointId);
+        
+        return mockResponseRepository.save(cloned);
+    }
+
+    /**
+     * Clone all responses from one endpoint to another
+     */
+    @Transactional
+    public List<MockResponse> cloneAllResponses(Long sourceEndpointId, Long targetEndpointId) {
+        MockEndpoint sourceEndpoint = mockEndpointRepository.findById(sourceEndpointId)
+                .orElseThrow(() -> new IllegalArgumentException("Source endpoint not found with id: " + sourceEndpointId));
+        
+        MockEndpoint targetEndpoint = mockEndpointRepository.findById(targetEndpointId)
+                .orElseThrow(() -> new IllegalArgumentException("Target endpoint not found with id: " + targetEndpointId));
+        
+        List<MockResponse> sourceResponses = mockResponseRepository.findByMockEndpointId(sourceEndpointId);
+        List<MockResponse> clonedResponses = new ArrayList<>();
+        
+        for (MockResponse source : sourceResponses) {
+            MockResponse cloned = MockResponse.builder()
+                    .mockEndpoint(targetEndpoint)
+                    .name(source.getName())
+                    .matchConditions(source.getMatchConditions())
+                    .httpStatus(source.getHttpStatus())
+                    .responseBody(source.getResponseBody())
+                    .responseHeaders(source.getResponseHeaders())
+                    .priority(source.getPriority())
+                    .enabled(source.getEnabled())
+                    .delayMs(source.getDelayMs())
+                    .build();
+            
+            // Validate against target endpoint's schema
+            validateMockResponse(targetEndpoint, cloned);
+            
+            clonedResponses.add(mockResponseRepository.save(cloned));
+        }
+        
+        log.info("Cloned {} responses from endpoint {} (id: {}) to endpoint {} (id: {})", 
+                sourceResponses.size(), sourceEndpoint.getPath(), sourceEndpointId, 
+                targetEndpoint.getPath(), targetEndpointId);
+        
+        return clonedResponses;
     }
 
     // Validation methods
