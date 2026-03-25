@@ -31,10 +31,16 @@ public class MockService {
         List<MockEndpoint> endpoints = mockEndpointRepository.findByBackendNameAndEnabled(backendName, true);
         
         MockEndpoint matchedEndpoint = null;
+        Map<String, String> pathParams = new HashMap<>();
+        
         for (MockEndpoint endpoint : endpoints) {
-            if (endpoint.getMethod().equalsIgnoreCase(method) && pathMatches(endpoint.getPath(), path)) {
-                matchedEndpoint = endpoint;
-                break;
+            if (endpoint.getMethod().equalsIgnoreCase(method)) {
+                Map<String, String> extractedParams = extractPathParameters(endpoint.getPath(), path);
+                if (extractedParams != null) {
+                    matchedEndpoint = endpoint;
+                    pathParams = extractedParams;
+                    break;
+                }
             }
         }
         
@@ -43,12 +49,14 @@ public class MockService {
             return Optional.empty();
         }
         
+        log.debug("Matched endpoint: {} {} with path params: {}", method, matchedEndpoint.getPath(), pathParams);
+        
         // Get responses ordered by priority
         List<MockResponse> responses = mockResponseRepository.findByMockEndpointIdOrderByPriorityDesc(matchedEndpoint.getId());
         
         // Find first matching response based on match conditions
         for (MockResponse response : responses) {
-            if (matchesConditions(response, request, requestBody)) {
+            if (matchesConditions(response, request, requestBody, pathParams)) {
                 log.info("Found matching mock response: {} for {} {}", response.getName(), method, path);
                 return Optional.of(response);
             }
@@ -63,14 +71,42 @@ public class MockService {
         return Optional.empty();
     }
 
-    private boolean pathMatches(String pattern, String actualPath) {
-        // Convert path pattern like /users/{id} to regex
-        String regex = pattern.replaceAll("\\{[^}]+\\}", "[^/]+");
-        regex = "^" + regex + "$";
-        return actualPath.matches(regex);
+    /**
+     * Extract path parameters from actual path based on pattern
+     * e.g., pattern="/users/{id}/orders/{orderId}" and path="/users/123/orders/456"
+     * returns {"id": "123", "orderId": "456"}
+     * Returns null if path doesn't match pattern
+     */
+    private Map<String, String> extractPathParameters(String pattern, String actualPath) {
+        Map<String, String> params = new HashMap<>();
+        
+        String[] patternParts = pattern.split("/");
+        String[] pathParts = actualPath.split("/");
+        
+        // Different number of parts means no match
+        if (patternParts.length != pathParts.length) {
+            return null;
+        }
+        
+        for (int i = 0; i < patternParts.length; i++) {
+            String patternPart = patternParts[i];
+            String pathPart = pathParts[i];
+            
+            if (patternPart.startsWith("{") && patternPart.endsWith("}")) {
+                // Extract parameter name and value
+                String paramName = patternPart.substring(1, patternPart.length() - 1);
+                params.put(paramName, pathPart);
+            } else if (!patternPart.equals(pathPart)) {
+                // Non-parameter parts must match exactly
+                return null;
+            }
+        }
+        
+        return params;
     }
 
-    private boolean matchesConditions(MockResponse response, HttpServletRequest request, String requestBody) {
+    private boolean matchesConditions(MockResponse response, HttpServletRequest request, String requestBody, 
+                                     Map<String, String> pathParams) {
         if (response.getMatchConditions() == null || response.getMatchConditions().isEmpty()) {
             return true; // No conditions means always match
         }
@@ -78,6 +114,20 @@ public class MockService {
         try {
             Map<String, Object> conditions = objectMapper.readValue(response.getMatchConditions(), 
                     new TypeReference<Map<String, Object>>() {});
+            
+            // Check path parameters
+            if (conditions.containsKey("pathParams")) {
+                @SuppressWarnings("unchecked")
+                Map<String, String> expectedPathParams = (Map<String, String>) conditions.get("pathParams");
+                for (Map.Entry<String, String> entry : expectedPathParams.entrySet()) {
+                    String actualValue = pathParams.get(entry.getKey());
+                    if (!entry.getValue().equals(actualValue)) {
+                        log.debug("Path param mismatch: expected {}={}, got {}", 
+                                entry.getKey(), entry.getValue(), actualValue);
+                        return false;
+                    }
+                }
+            }
             
             // Check query parameters
             if (conditions.containsKey("queryParams")) {

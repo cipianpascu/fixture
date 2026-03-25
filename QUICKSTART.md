@@ -177,6 +177,7 @@ curl http://localhost:8080/api/v1/{backend-name}/{endpoint} \
 ### 3. Conditional Mock Responses
 Create multiple responses with different priorities and match conditions:
 
+#### Match by Query Parameters
 **High priority response for specific query param:**
 ```json
 {
@@ -196,6 +197,62 @@ Create multiple responses with different priorities and match conditions:
   "priority": 10
 }
 ```
+
+#### Match by Path Parameters
+Return different responses based on path parameters like `{id}`:
+
+```bash
+# 1. Create endpoint with path parameter
+curl -X POST http://localhost:8080/admin/api/mock-endpoints \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backendName": "user-service",
+    "method": "GET",
+    "path": "/users/{id}",
+    "enabled": true
+  }'
+# Returns: {"id": 100, ...}
+
+# 2. Create response for user ID = 1
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/100/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "User 1 - John",
+    "matchConditions": "{\"pathParams\":{\"id\":\"1\"}}",
+    "httpStatus": 200,
+    "responseBody": "{\"id\":1,\"name\":\"John\"}",
+    "priority": 20,
+    "enabled": true
+  }'
+
+# 3. Create response for user ID = 2
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/100/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "User 2 - Jane",
+    "matchConditions": "{\"pathParams\":{\"id\":\"2\"}}",
+    "httpStatus": 200,
+    "responseBody": "{\"id\":2,\"name\":\"Jane\"}",
+    "priority": 20,
+    "enabled": true
+  }'
+
+# 4. Test different IDs
+curl http://localhost:8080/api/v1/user-service/users/1  # Returns John
+curl http://localhost:8080/api/v1/user-service/users/2  # Returns Jane
+```
+
+#### Supported Match Conditions
+```json
+{
+  "pathParams": {"id": "1", "orderId": "456"},
+  "queryParams": {"role": "admin", "status": "active"},
+  "headers": {"X-Custom-Header": "value"},
+  "bodyContains": "search-term"
+}
+```
+
+**Priority matters!** Higher priority responses are checked first. Use higher priority for more specific matches.
 
 ### 4. Clone Responses to Multiple Endpoints
 
@@ -297,10 +354,11 @@ docker run -d -p 5432:5432 \
 
 1. Read the full [README.md](README.md) for detailed documentation
 2. Explore the Admin API via Swagger UI
-3. Learn about [Response Cloning](docs/RESPONSE_CLONING.md) for advanced mock management
-4. Set up your production backends in routing mode
-5. Create comprehensive mocks for your test environments
-6. Integrate with your CI/CD pipeline
+3. Learn about [Match Conditions](docs/MATCH_CONDITIONS.md) for advanced request matching (path params, query params, headers)
+4. Learn about [Response Cloning](docs/RESPONSE_CLONING.md) for reusing responses across endpoints
+5. Set up your production backends in routing mode
+6. Create comprehensive mocks for your test environments
+7. Integrate with your CI/CD pipeline
 
 ## Support
 
