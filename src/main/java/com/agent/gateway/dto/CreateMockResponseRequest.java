@@ -17,9 +17,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class CreateMockResponseRequest {
     
-    @NotNull(message = "Mock endpoint ID is required")
-    private Long mockEndpointId;
-    
     private String name;
     
     private String matchConditions;

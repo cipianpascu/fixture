@@ -420,7 +420,6 @@ curl -X POST http://localhost:8080/admin/api/mock-endpoints \
 curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
   -H "Content-Type: application/json" \
   -d '{
-    "mockEndpointId": 1,
     "name": "Success",
     "httpStatus": 200,
     "responseBody": "{\"users\":[{\"id\":1,\"name\":\"John Doe\",\"email\":\"john@example.com\"}]}",

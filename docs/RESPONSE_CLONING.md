@@ -38,7 +38,6 @@ curl -X POST "http://localhost:8080/admin/api/mock-responses/10/clone?targetEndp
 {
   "id": 42,
   "name": "Success Response (copy)",
-  "mockEndpointId": 5,
   "httpStatus": 200,
   "responseBody": "{\"status\":\"ok\"}",
   "responseHeaders": "{\"Content-Type\":\"application/json\"}",

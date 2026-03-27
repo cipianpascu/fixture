@@ -172,7 +172,6 @@ curl http://localhost:8080/admin/api/mock-endpoints/backend/user-service
 curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
   -H "Content-Type: application/json" \
   -d '{
-    "mockEndpointId": 1,
     "name": "Success Response",
     "matchConditions": "{\"queryParams\":{\"status\":\"active\"}}",
     "httpStatus": 200,

@@ -158,7 +158,6 @@ curl -X POST http://localhost:8081/admin/api/mock-endpoints \
 curl -X POST http://localhost:8081/admin/api/mock-endpoints/1/responses \
   -H "Content-Type: application/json" \
   -d '{
-    "mockEndpointId": 1,
     "name": "Success",
     "httpStatus": 200,
     "responseBody": "{\"result\":\"success\"}",
@@ -205,7 +204,6 @@ curl -X PUT http://localhost:8081/admin/api/mock-responses/1 \
 curl -X POST http://localhost:8081/admin/api/mock-endpoints/1/responses \
   -H "Content-Type: application/json" \
   -d '{
-    "mockEndpointId": 1,
     "name": "Admin Response",
     "matchConditions": "{\"headers\":{\"X-User-Role\":\"admin\"}}",
     "httpStatus": 200,
