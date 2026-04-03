@@ -73,8 +73,17 @@ public class MockService {
 
     /**
      * Extract path parameters from actual path based on pattern
+     * Supports:
+     * - {param} - named path parameters: /users/{id} matches /users/123
+     * - * - single wildcard: /api/* /data matches /api/anything/data
+     * - ** - multi-segment wildcard: /api/** matches /api/a/b/c
+     * 
      * e.g., pattern="/users/{id}/orders/{orderId}" and path="/users/123/orders/456"
      * returns {"id": "123", "orderId": "456"}
+     * 
+     * e.g., pattern="/some/generic/path/*" and path="/some/generic/path/first"
+     * returns {} (matches but no named params)
+     * 
      * Returns null if path doesn't match pattern
      */
     private Map<String, String> extractPathParameters(String pattern, String actualPath) {
@@ -83,26 +92,64 @@ public class MockService {
         String[] patternParts = pattern.split("/");
         String[] pathParts = actualPath.split("/");
         
-        // Different number of parts means no match
+        // Check for ** wildcard (matches rest of path)
+        for (int i = 0; i < patternParts.length; i++) {
+            if ("**".equals(patternParts[i])) {
+                // ** matches everything from this point on
+                // Verify prefix matches
+                for (int j = 0; j < i; j++) {
+                    if (j >= pathParts.length) {
+                        return null; // Path too short
+                    }
+                    if (!matchesSegment(patternParts[j], pathParts[j], params)) {
+                        return null;
+                    }
+                }
+                // Store the remaining path if ** is used
+                if (i < pathParts.length) {
+                    StringBuilder remaining = new StringBuilder();
+                    for (int j = i; j < pathParts.length; j++) {
+                        if (remaining.length() > 0) remaining.append("/");
+                        remaining.append(pathParts[j]);
+                    }
+                    params.put("_wildcard", remaining.toString());
+                }
+                return params;
+            }
+        }
+        
+        // No **, check if lengths match (allowing for * wildcards)
         if (patternParts.length != pathParts.length) {
             return null;
         }
         
+        // Match each segment
         for (int i = 0; i < patternParts.length; i++) {
-            String patternPart = patternParts[i];
-            String pathPart = pathParts[i];
-            
-            if (patternPart.startsWith("{") && patternPart.endsWith("}")) {
-                // Extract parameter name and value
-                String paramName = patternPart.substring(1, patternPart.length() - 1);
-                params.put(paramName, pathPart);
-            } else if (!patternPart.equals(pathPart)) {
-                // Non-parameter parts must match exactly
+            if (!matchesSegment(patternParts[i], pathParts[i], params)) {
                 return null;
             }
         }
         
         return params;
+    }
+    
+    /**
+     * Check if a path segment matches a pattern segment
+     * Supports {param}, *, and literal matching
+     */
+    private boolean matchesSegment(String patternSegment, String pathSegment, Map<String, String> params) {
+        if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
+            // Named parameter
+            String paramName = patternSegment.substring(1, patternSegment.length() - 1);
+            params.put(paramName, pathSegment);
+            return true;
+        } else if ("*".equals(patternSegment)) {
+            // Single wildcard - matches any single segment
+            return true;
+        } else {
+            // Literal match
+            return patternSegment.equals(pathSegment);
+        }
     }
 
     private boolean matchesConditions(MockResponse response, HttpServletRequest request, String requestBody, 
