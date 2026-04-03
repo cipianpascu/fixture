@@ -142,6 +142,15 @@ public class GatewayController {
             }
         }
         
+        // Process template variables in response body
+        // Note: pathParams are empty here but can be enhanced if needed
+        String processedBody = mockService.processTemplateVariables(
+                mockResponse.getResponseBody(), 
+                request, 
+                requestBody, 
+                new java.util.HashMap<>()
+        );
+        
         // Build response headers
         HttpHeaders headers = new HttpHeaders();
         if (mockResponse.getResponseHeaders() != null && !mockResponse.getResponseHeaders().isEmpty()) {
@@ -160,7 +169,7 @@ public class GatewayController {
         }
         
         log.info("Returning mock response: {} with status {}", mockResponse.getName(), mockResponse.getHttpStatus());
-        return new ResponseEntity<>(mockResponse.getResponseBody(), headers, 
+        return new ResponseEntity<>(processedBody, headers, 
                 HttpStatus.valueOf(mockResponse.getHttpStatus()));
     }
 

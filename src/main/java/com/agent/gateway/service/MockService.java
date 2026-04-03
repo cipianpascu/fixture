@@ -70,6 +70,102 @@ public class MockService {
         
         return Optional.empty();
     }
+    
+    /**
+     * Process template variables in response body
+     * Supports:
+     * - {{request.body}} - mirrors the request body
+     * - {{request.path}} - the request path
+     * - {{request.method}} - the HTTP method
+     * - {{request.header.HeaderName}} - specific request header
+     * - {{request.query.paramName}} - specific query parameter
+     * - {{pathParam.name}} - path parameter value
+     */
+    public String processTemplateVariables(String responseBody, HttpServletRequest request, 
+                                          String requestBody, Map<String, String> pathParams) {
+        if (responseBody == null || responseBody.isEmpty()) {
+            return responseBody;
+        }
+        
+        String processed = responseBody;
+        
+        // {{request.body}} - mirror request body
+        if (processed.contains("{{request.body}}")) {
+            processed = processed.replace("{{request.body}}", 
+                    requestBody != null ? requestBody : "");
+        }
+        
+        // {{request.path}}
+        if (processed.contains("{{request.path}}")) {
+            processed = processed.replace("{{request.path}}", 
+                    request.getRequestURI() != null ? request.getRequestURI() : "");
+        }
+        
+        // {{request.method}}
+        if (processed.contains("{{request.method}}")) {
+            processed = processed.replace("{{request.method}}", 
+                    request.getMethod() != null ? request.getMethod() : "");
+        }
+        
+        // {{request.header.X}} - extract specific headers
+        processed = replaceHeaderVariables(processed, request);
+        
+        // {{request.query.X}} - extract query parameters
+        processed = replaceQueryVariables(processed, request);
+        
+        // {{pathParam.X}} - extract path parameters
+        processed = replacePathParamVariables(processed, pathParams);
+        
+        return processed;
+    }
+    
+    private String replaceHeaderVariables(String text, HttpServletRequest request) {
+        String result = text;
+        // Find all {{request.header.XXX}} patterns
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\{\\{request\\.header\\.([^}]+)\\}\\}");
+        java.util.regex.Matcher matcher = pattern.matcher(text);
+        
+        while (matcher.find()) {
+            String headerName = matcher.group(1);
+            String headerValue = request.getHeader(headerName);
+            result = result.replace("{{request.header." + headerName + "}}", 
+                    headerValue != null ? headerValue : "");
+        }
+        
+        return result;
+    }
+    
+    private String replaceQueryVariables(String text, HttpServletRequest request) {
+        String result = text;
+        // Find all {{request.query.XXX}} patterns
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\{\\{request\\.query\\.([^}]+)\\}\\}");
+        java.util.regex.Matcher matcher = pattern.matcher(text);
+        
+        while (matcher.find()) {
+            String paramName = matcher.group(1);
+            String paramValue = request.getParameter(paramName);
+            result = result.replace("{{request.query." + paramName + "}}", 
+                    paramValue != null ? paramValue : "");
+        }
+        
+        return result;
+    }
+    
+    private String replacePathParamVariables(String text, Map<String, String> pathParams) {
+        String result = text;
+        // Find all {{pathParam.XXX}} patterns
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\{\\{pathParam\\.([^}]+)\\}\\}");
+        java.util.regex.Matcher matcher = pattern.matcher(text);
+        
+        while (matcher.find()) {
+            String paramName = matcher.group(1);
+            String paramValue = pathParams.get(paramName);
+            result = result.replace("{{pathParam." + paramName + "}}", 
+                    paramValue != null ? paramValue : "");
+        }
+        
+        return result;
+    }
 
     /**
      * Extract path parameters from actual path based on pattern
