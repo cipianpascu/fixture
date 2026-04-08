@@ -6,7 +6,7 @@ Match conditions allow you to **return different responses** based on the incomi
 
 ## Supported Match Conditions
 
-The `matchConditions` field in `MockResponse` supports four types of matching:
+The `matchConditions` field in `MockResponse` supports five types of matching:
 
 ### 1. Path Parameters (`pathParams`)
 Match based on values extracted from the URL path pattern.
@@ -18,7 +18,10 @@ Match based on URL query string parameters.
 Match based on HTTP request headers.
 
 ### 4. Body Content (`bodyContains`)
-Match if the request body contains specific text.
+Match if the request body contains specific text (literal string matching).
+
+### 5. JSON Body Attributes (`bodyAttributes`)
+Match based on JSON attributes with smart type conversion (string ↔ number).
 
 ## Match Conditions Format
 
@@ -36,7 +39,12 @@ Match if the request body contains specific text.
     "X-User-Type": "premium",
     "Authorization": "Bearer token123"
   },
-  "bodyContains": "search-term"
+  "bodyContains": "search-term",
+  "bodyAttributes": {
+    "id": 123,
+    "status": "active",
+    "user.type": "premium"
+  }
 }
 ```
 
@@ -276,6 +284,297 @@ curl -X POST http://localhost:8080/api/v1/product-service/search \
   -d '{"query":"phone"}'
 # Returns phone results
 ```
+
+## JSON Body Attributes Matching
+
+**⭐ RECOMMENDED for JSON APIs** - Intelligently matches JSON attributes with automatic type conversion.
+
+### Why Use `bodyAttributes` Instead of `bodyContains`?
+
+**The Problem with `bodyContains`:**
+```json
+// Your match condition
+{"bodyContains": "\"id\": \"123\""}
+
+// ✅ Works with string IDs
+{"id": "123", "name": "John"}
+
+// ❌ FAILS with integer IDs (no quotes!)
+{"id": 123, "name": "John"}
+```
+
+**The Solution with `bodyAttributes`:**
+```json
+// Your match condition
+{"bodyAttributes": {"id": 123}}
+
+// ✅ Works with integer IDs
+{"id": 123, "name": "John"}
+
+// ✅ ALSO works with string IDs (smart conversion!)
+{"id": "123", "name": "John"}
+```
+
+### Features
+
+✅ **Type-aware matching** - Handles strings, numbers, booleans  
+✅ **Smart conversion** - Matches `"123"` with `123` automatically  
+✅ **Nested attributes** - Use dot notation: `"user.type"`  
+✅ **Multiple fields** - Match on several attributes at once  
+✅ **JSON parsing** - Proper JSON structure understanding  
+
+### Example 1: Match by ID (String or Integer)
+
+```bash
+# Create endpoint
+curl -X POST http://localhost:8080/admin/api/mock-endpoints \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backendName": "user-service",
+    "method": "POST",
+    "path": "/users",
+    "enabled": true
+  }'
+
+# Response for ID = 123 (works with BOTH string and integer!)
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "User 123",
+    "matchConditions": "{\"bodyAttributes\":{\"id\":123}}",
+    "httpStatus": 200,
+    "responseBody": "{\"id\":123,\"name\":\"John Doe\",\"email\":\"john@example.com\"}",
+    "priority": 20,
+    "enabled": true
+  }'
+
+# Response for ID = 456
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "User 456",
+    "matchConditions": "{\"bodyAttributes\":{\"id\":456}}",
+    "httpStatus": 200,
+    "responseBody": "{\"id\":456,\"name\":\"Jane Smith\",\"email\":\"jane@example.com\"}",
+    "priority": 20,
+    "enabled": true
+  }'
+
+# Default response
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "User Not Found",
+    "matchConditions": "{}",
+    "httpStatus": 404,
+    "responseBody": "{\"error\":\"User not found\"}",
+    "priority": 10,
+    "enabled": true
+  }'
+```
+
+**Test - Both Integer and String Work:**
+```bash
+# Integer ID
+curl -X POST http://localhost:8080/api/v1/user-service/users \
+  -d '{"id": 123, "action": "create"}'
+# ✅ Returns: User 123
+
+# String ID (same match condition!)
+curl -X POST http://localhost:8080/api/v1/user-service/users \
+  -d '{"id": "123", "action": "create"}'
+# ✅ Also returns: User 123 (smart matching!)
+```
+
+### Example 2: Multiple Attributes
+
+Match on multiple JSON fields simultaneously:
+
+```bash
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Active User 123",
+    "matchConditions": "{\"bodyAttributes\":{\"id\":123,\"status\":\"active\"}}",
+    "httpStatus": 200,
+    "responseBody": "{\"id\":123,\"status\":\"active\",\"data\":\"Active user data\"}",
+    "priority": 30,
+    "enabled": true
+  }'
+```
+
+**Matches:**
+```bash
+# ✅ Integer ID, matches
+curl -X POST http://localhost:8080/api/v1/user-service/users \
+  -d '{"id": 123, "status": "active"}'
+
+# ✅ String ID, also matches!
+curl -X POST http://localhost:8080/api/v1/user-service/users \
+  -d '{"id": "123", "status": "active"}'
+
+# ❌ Wrong status, doesn't match
+curl -X POST http://localhost:8080/api/v1/user-service/users \
+  -d '{"id": 123, "status": "inactive"}'
+```
+
+### Example 3: Nested Attributes
+
+Access nested JSON fields using **dot notation**:
+
+```bash
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Premium User",
+    "matchConditions": "{\"bodyAttributes\":{\"user.type\":\"premium\",\"user.id\":123}}",
+    "httpStatus": 200,
+    "responseBody": "{\"message\":\"Welcome premium user!\",\"features\":[\"unlimited\",\"priority-support\"]}",
+    "priority": 30,
+    "enabled": true
+  }'
+```
+
+**Test:**
+```bash
+curl -X POST http://localhost:8080/api/v1/user-service/validate \
+  -d '{
+    "user": {
+      "id": 123,
+      "type": "premium"
+    },
+    "action": "login"
+  }'
+# ✅ Returns: Premium user message
+```
+
+### Example 4: Real-World - Order Processing
+
+```bash
+# 1. Create order endpoint
+curl -X POST http://localhost:8080/admin/api/mock-endpoints \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backendName": "order-service",
+    "method": "POST",
+    "path": "/orders",
+    "enabled": true
+  }'
+
+# 2. Response for product ID = 1 (handles both "1" and 1)
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Product 1 Order",
+    "matchConditions": "{\"bodyAttributes\":{\"productId\":1}}",
+    "httpStatus": 201,
+    "responseBody": "{\"orderId\":1001,\"productId\":1,\"status\":\"confirmed\",\"price\":99.99}",
+    "priority": 20,
+    "enabled": true
+  }'
+
+# 3. Response for product ID = 2
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Product 2 Order",
+    "matchConditions": "{\"bodyAttributes\":{\"productId\":2}}",
+    "httpStatus": 201,
+    "responseBody": "{\"orderId\":1002,\"productId\":2,\"status\":\"confirmed\",\"price\":149.99}",
+    "priority": 20,
+    "enabled": true
+  }'
+
+# 4. Out of stock product
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Product 3 - Out of Stock",
+    "matchConditions": "{\"bodyAttributes\":{\"productId\":3}}",
+    "httpStatus": 400,
+    "responseBody": "{\"error\":\"Product out of stock\"}",
+    "priority": 20,
+    "enabled": true
+  }'
+
+# 5. Default - invalid product
+curl -X POST http://localhost:8080/admin/api/mock-endpoints/1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Invalid Product",
+    "matchConditions": "{}",
+    "httpStatus": 400,
+    "responseBody": "{\"error\":\"Invalid product ID\"}",
+    "priority": 10,
+    "enabled": true
+  }'
+```
+
+**Test with Different Data Types:**
+```bash
+# Integer productId
+curl -X POST http://localhost:8080/api/v1/order-service/orders \
+  -d '{"productId": 1, "quantity": 5}'
+# ✅ Returns: Product 1 Order
+
+# String productId (same condition works!)
+curl -X POST http://localhost:8080/api/v1/order-service/orders \
+  -d '{"productId": "1", "quantity": 5}'
+# ✅ Also returns: Product 1 Order
+
+# Out of stock
+curl -X POST http://localhost:8080/api/v1/order-service/orders \
+  -d '{"productId": 3, "quantity": 1}'
+# ✅ Returns: Out of stock error
+
+# Invalid product
+curl -X POST http://localhost:8080/api/v1/order-service/orders \
+  -d '{"productId": 999, "quantity": 1}'
+# ✅ Returns: Invalid product error
+```
+
+### Comparison: `bodyContains` vs `bodyAttributes`
+
+| Feature | `bodyContains` | `bodyAttributes` |
+|---------|----------------|------------------|
+| **String matching** | ✅ Literal text search | ✅ Intelligent matching |
+| **Type handling** | ❌ `"123"` ≠ `123` | ✅ `"123"` = `123` |
+| **JSON structure** | ❌ String-based only | ✅ Proper JSON parsing |
+| **Nested fields** | ❌ Difficult | ✅ Dot notation: `user.id` |
+| **Multiple fields** | ❌ Complex patterns | ✅ Simple object |
+| **Number matching** | ❌ Quotes matter | ✅ Type-agnostic |
+| **Use case** | Text search | **JSON APIs** ⭐ |
+
+### When to Use Each
+
+| Scenario | Use |
+|----------|-----|
+| **Matching JSON attributes by value** | `bodyAttributes` ⭐ |
+| **Need to handle integer/string IDs** | `bodyAttributes` ⭐ |
+| **Matching nested JSON fields** | `bodyAttributes` ⭐ |
+| **Multiple field matching** | `bodyAttributes` ⭐ |
+| **Simple text search** | `bodyContains` |
+| **Non-JSON content** | `bodyContains` |
+| **Partial text matching** | `bodyContains` |
+
+### Type Conversion Rules
+
+The `bodyAttributes` matcher handles these conversions automatically:
+
+```
+"123" ↔ 123     ✅ String and integer are considered equal
+"true" ↔ true   ✅ String and boolean match
+"12.5" ↔ 12.5   ✅ String and float match
+null ↔ null     ✅ Null values match
+```
+
+### Important Notes
+
+✅ **Recommended for JSON APIs** - Use `bodyAttributes` for all JSON-based matching  
+✅ **Case sensitive** - String comparisons are case-sensitive  
+✅ **Exact match** - All specified attributes must match  
+⚠️ **JSON only** - Request body must be valid JSON  
+⚠️ **No regex** - Values are matched exactly (with type conversion)  
 
 ## Combining Multiple Conditions
 
@@ -577,8 +876,11 @@ Match conditions provide powerful, flexible mock behavior:
 ✅ **Path Parameters** - Different data for different resources  
 ✅ **Query Parameters** - Filter and pagination support  
 ✅ **Headers** - API versioning, authentication  
-✅ **Body Content** - Search and filter operations  
+✅ **Body Content (bodyContains)** - Simple text search in request body  
+✅ **JSON Body Attributes (bodyAttributes)** ⭐ - Smart JSON matching with type conversion  
 ✅ **Priority System** - Control match order  
 ✅ **Combine Conditions** - Very specific matching  
+
+**💡 Pro Tip:** For JSON APIs, always use `bodyAttributes` instead of `bodyContains` to handle type differences (string vs integer IDs, etc.)
 
 Use them to create realistic, dynamic API mocks! 🚀

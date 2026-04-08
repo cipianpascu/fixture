@@ -296,10 +296,42 @@ public class MockService {
                 }
             }
             
-            // Check request body contains
+            // Check request body contains (literal string match)
             if (conditions.containsKey("bodyContains")) {
                 String expectedContent = (String) conditions.get("bodyContains");
                 if (requestBody == null || !requestBody.contains(expectedContent)) {
+                    return false;
+                }
+            }
+            
+            // Check JSON body attributes (flexible matching - handles both strings and numbers)
+            if (conditions.containsKey("bodyAttributes")) {
+                if (requestBody == null || requestBody.isEmpty()) {
+                    return false;
+                }
+                
+                @SuppressWarnings("unchecked")
+                Map<String, Object> expectedAttributes = (Map<String, Object>) conditions.get("bodyAttributes");
+                
+                // Parse request body as JSON
+                try {
+                    Map<String, Object> actualBody = objectMapper.readValue(requestBody, 
+                            new TypeReference<Map<String, Object>>() {});
+                    
+                    // Check each expected attribute
+                    for (Map.Entry<String, Object> entry : expectedAttributes.entrySet()) {
+                        String key = entry.getKey();
+                        Object expectedValue = entry.getValue();
+                        Object actualValue = getNestedValue(actualBody, key);
+                        
+                        if (!valuesMatch(expectedValue, actualValue)) {
+                            log.debug("Body attribute mismatch: expected {}={}, got {}", 
+                                    key, expectedValue, actualValue);
+                            return false;
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug("Error parsing request body as JSON for attribute matching", e);
                     return false;
                 }
             }
@@ -309,6 +341,105 @@ public class MockService {
             log.error("Error parsing match conditions", e);
             return false;
         }
+    }
+    
+    /**
+     * Get nested value from JSON object using dot notation
+     * Examples: "id", "user.name", "order.items[0].price"
+     */
+    private Object getNestedValue(Map<String, Object> json, String key) {
+        if (json == null) {
+            return null;
+        }
+        
+        // Simple key (no nesting)
+        if (!key.contains(".")) {
+            return json.get(key);
+        }
+        
+        // Nested key - traverse the path
+        String[] parts = key.split("\\.");
+        Object current = json;
+        
+        for (String part : parts) {
+            if (current == null) {
+                return null;
+            }
+            
+            if (current instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> map = (Map<String, Object>) current;
+                current = map.get(part);
+            } else {
+                return null;
+            }
+        }
+        
+        return current;
+    }
+    
+    /**
+     * Check if two values match, handling type conversions
+     * Handles: strings, numbers, booleans, null
+     */
+    private boolean valuesMatch(Object expected, Object actual) {
+        if (expected == null && actual == null) {
+            return true;
+        }
+        if (expected == null || actual == null) {
+            return false;
+        }
+        
+        // Direct equality
+        if (expected.equals(actual)) {
+            return true;
+        }
+        
+        // String comparison (normalize)
+        String expectedStr = expected.toString();
+        String actualStr = actual.toString();
+        
+        if (expectedStr.equals(actualStr)) {
+            return true;
+        }
+        
+        // Numeric comparison - handle "123" vs 123
+        try {
+            if (isNumeric(expected) && isNumeric(actual)) {
+                double expectedNum = toDouble(expected);
+                double actualNum = toDouble(actual);
+                return Math.abs(expectedNum - actualNum) < 0.0001;
+            }
+        } catch (Exception e) {
+            // Not numeric, fall through
+        }
+        
+        return false;
+    }
+    
+    private boolean isNumeric(Object obj) {
+        if (obj instanceof Number) {
+            return true;
+        }
+        if (obj instanceof String) {
+            try {
+                Double.parseDouble((String) obj);
+                return true;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+        return false;
+    }
+    
+    private double toDouble(Object obj) {
+        if (obj instanceof Number) {
+            return ((Number) obj).doubleValue();
+        }
+        if (obj instanceof String) {
+            return Double.parseDouble((String) obj);
+        }
+        throw new IllegalArgumentException("Cannot convert to double: " + obj);
     }
 
     // CRUD operations for MockEndpoint
