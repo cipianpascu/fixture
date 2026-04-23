@@ -1,0 +1,71 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: backend-gateway-proxy
+
+gateway:
+  # Schema validation settings
+  schemas:
+    directory: classpath:schemas/
+    validate-requests: true
+    validate-responses: false
+    strict-mode: true  # Reject if no schema found
+    
+  # Backend configurations (file-based - NO database!)
+  backends:
+    - name: example-service
+      baseUrl: http://localhost:9001
+      path: /api/v1/example
+      schema: example-service.yaml
+      timeout: 30s
+      enabled: true
+      
+    # Add more backends as needed
+    # - name: user-service
+    #   baseUrl: http://localhost:9002
+    #   path: /api/v1/users
+    #   schema: user-service.yaml
+    #   timeout: 20s
+    #   enabled: true
+
+# Actuator (health checks and metrics only)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Resilience4j configuration
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+  
+  retry:
+    configs:
+      default:
+        maxAttempts: 3
+        waitDuration: 1s
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.agent.gateway.proxy: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"

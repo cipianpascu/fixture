@@ -1,0 +1,26 @@
+# Fixture/Mock profile configuration
+gateway:
+  mode: fixture
+
+# Use PostgreSQL for fixture mode (database-driven mocks)
+spring:
+  datasource:
+    url: jdbc:h2:mem:routingdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+# Admin UI enabled for fixture mode
+admin:
+  ui:
+    enabled: true
+    path: /admin
+
+logging:
+  level:
+    com.agent.gateway: DEBUG
+    org.hibernate.SQL: DEBUG
