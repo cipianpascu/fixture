@@ -25,6 +25,7 @@ public class ProxyProperties {
     public static class SchemaConfig {
         private String directory = "classpath:schemas/";
         private boolean validateRequests = true;
+        private boolean validateBodies = true;  // Validate request body against schema
         private boolean validateResponses = false;
         private boolean strictMode = true;  // Reject if no schema found
     }

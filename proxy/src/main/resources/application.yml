@@ -9,9 +9,10 @@ gateway:
   # Schema validation settings
   schemas:
     directory: classpath:schemas/
-    validate-requests: true
-    validate-responses: false
-    strict-mode: true  # Reject if no schema found
+    validate-requests: true        # Enable path/method validation
+    validate-bodies: true           # Enable request body validation (disable to skip body checks)
+    validate-responses: false       # Enable response validation (not implemented yet)
+    strict-mode: true               # Reject if no schema found
     
   # Backend configurations (file-based - NO database!)
   backends:

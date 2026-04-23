@@ -1,6 +1,7 @@
 package com.agent.gateway.proxy.service;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.ParseOptions;
@@ -13,9 +14,7 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -32,6 +31,11 @@ public class SchemaLoader {
     private final ProxyProperties proxyProperties;
     private final ResourceLoader resourceLoader;
     private final Map<String, OpenAPI> schemas = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Map<String, com.networknt.schema.JsonSchema>>> cachedJsonSchemas = new ConcurrentHashMap<>();
+    
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final com.networknt.schema.JsonSchemaFactory schemaFactory = 
+        com.networknt.schema.JsonSchemaFactory.getInstance(com.networknt.schema.SpecVersion.VersionFlag.V7);
     
     @PostConstruct
     public void loadSchemas() {
@@ -80,7 +84,14 @@ public class SchemaLoader {
             );
             
             if (result.getOpenAPI() != null) {
-                schemas.put(filename, result.getOpenAPI());
+                OpenAPI openAPI = result.getOpenAPI();
+                schemas.put(filename, openAPI);
+                
+                // Pre-compile JSON schemas for validation (optimization) if body validation enabled
+                if (proxyProperties.getSchemas().isValidateBodies()) {
+                    preCompileJsonSchemas(filename, openAPI);
+                }
+                
                 log.info("Loaded schema: {}", filename);
             } else {
                 log.error("Failed to parse schema: {} - {}", 
@@ -114,10 +125,219 @@ public class SchemaLoader {
     }
     
     /**
+     * Get pre-compiled JSON schema for validation (cached at load time)
+     * 
+     * @param schemaName The schema filename
+     * @param path The API path
+     * @param method The HTTP method
+     * @return Pre-compiled JsonSchema, or null if not found
+     */
+    public com.networknt.schema.JsonSchema getCompiledJsonSchema(String schemaName, String path, String method) {
+        Map<String, Map<String, com.networknt.schema.JsonSchema>> pathMap = cachedJsonSchemas.get(schemaName);
+        if (pathMap == null) {
+            return null;
+        }
+        Map<String, com.networknt.schema.JsonSchema> methodMap = pathMap.getOrDefault(path, Map.of());
+        return methodMap.getOrDefault(method.toUpperCase(), null);
+    }
+    
+    /**
+     * Pre-compile JSON schemas for all paths and methods in an OpenAPI spec
+     * This is done once at load time for performance optimization
+     */
+    private void preCompileJsonSchemas(String schemaName, OpenAPI openAPI) {
+        if (openAPI.getPaths() == null) {
+            return;
+        }
+        
+        Map<String, Map<String, com.networknt.schema.JsonSchema>> pathMap = new HashMap<>();
+        
+        for (Map.Entry<String, io.swagger.v3.oas.models.PathItem> pathEntry : openAPI.getPaths().entrySet()) {
+            String path = pathEntry.getKey();
+            io.swagger.v3.oas.models.PathItem pathItem = pathEntry.getValue();
+            
+            Map<String, com.networknt.schema.JsonSchema> methodMap = new HashMap<>();
+            
+            // Pre-compile for each HTTP method
+            preCompileForOperation(openAPI, "GET", pathItem.getGet(), methodMap);
+            preCompileForOperation(openAPI, "POST", pathItem.getPost(), methodMap);
+            preCompileForOperation(openAPI, "PUT", pathItem.getPut(), methodMap);
+            preCompileForOperation(openAPI, "DELETE", pathItem.getDelete(), methodMap);
+            preCompileForOperation(openAPI, "PATCH", pathItem.getPatch(), methodMap);
+            preCompileForOperation(openAPI, "HEAD", pathItem.getHead(), methodMap);
+            preCompileForOperation(openAPI, "OPTIONS", pathItem.getOptions(), methodMap);
+            
+            if (!methodMap.isEmpty()) {
+                pathMap.put(path, methodMap);
+            }
+        }
+        
+        cachedJsonSchemas.put(schemaName, pathMap);
+        log.debug("Pre-compiled {} JSON schemas for {}", pathMap.size(), schemaName);
+    }
+    
+    /**
+     * Pre-compile JSON schema for a specific operation
+     */
+    private void preCompileForOperation(OpenAPI openAPI, String method, 
+                                        io.swagger.v3.oas.models.Operation operation,
+                                        Map<String, com.networknt.schema.JsonSchema> methodMap) {
+        if (operation == null) {
+            return;
+        }
+        
+        io.swagger.v3.oas.models.parameters.RequestBody requestBody = operation.getRequestBody();
+        if (requestBody == null || requestBody.getContent() == null) {
+            return;
+        }
+        
+        io.swagger.v3.oas.models.media.Content content = requestBody.getContent();
+        io.swagger.v3.oas.models.media.MediaType mediaType = content.get("application/json");
+        if (mediaType == null) {
+            mediaType = content.get("*/*");
+        }
+        
+        if (mediaType == null || mediaType.getSchema() == null) {
+            return;
+        }
+        
+        try {
+            // Convert OpenAPI schema to JSON Schema format
+            com.fasterxml.jackson.databind.JsonNode schemaNode = convertToJsonSchema(mediaType.getSchema(), openAPI);
+            
+            // Pre-compile the JSON schema
+            com.networknt.schema.JsonSchema jsonSchema = schemaFactory.getSchema(schemaNode);
+            
+            methodMap.put(method, jsonSchema);
+            log.trace("Pre-compiled JSON schema for {} {}", method, operation.getOperationId());
+            
+        } catch (Exception e) {
+            log.warn("Failed to pre-compile schema for {} operation: {}", method, e.getMessage());
+        }
+    }
+    
+    /**
+     * Convert OpenAPI schema to JSON Schema format
+     * (Reused from SchemaValidationService - could be extracted to utility class)
+     */
+    private com.fasterxml.jackson.databind.JsonNode convertToJsonSchema(
+            io.swagger.v3.oas.models.media.Schema<?> schema, OpenAPI openAPI) throws Exception {
+        
+        Map<String, Object> jsonSchema = new HashMap<>();
+        
+        // Handle $ref
+        if (schema.get$ref() != null) {
+            String ref = schema.get$ref();
+            io.swagger.v3.oas.models.media.Schema<?> resolvedSchema = resolveSchemaReference(ref, openAPI);
+            if (resolvedSchema != null) {
+                return convertToJsonSchema(resolvedSchema, openAPI);
+            }
+        }
+        
+        jsonSchema.put("$schema", "http://json-schema.org/draft-07/schema#");
+        
+        if (schema.getType() != null) {
+            jsonSchema.put("type", schema.getType());
+        }
+        
+        if (schema.getProperties() != null && !schema.getProperties().isEmpty()) {
+            Map<String, Object> properties = new HashMap<>();
+            for (Map.Entry<String, io.swagger.v3.oas.models.media.Schema> entry : schema.getProperties().entrySet()) {
+                properties.put(entry.getKey(), schemaToMap(entry.getValue(), openAPI));
+            }
+            jsonSchema.put("properties", properties);
+        }
+        
+        if (schema.getRequired() != null && !schema.getRequired().isEmpty()) {
+            jsonSchema.put("required", schema.getRequired());
+        }
+        
+        if (schema.getItems() != null) {
+            jsonSchema.put("items", schemaToMap(schema.getItems(), openAPI));
+        }
+        
+        if (schema.getEnum() != null) {
+            jsonSchema.put("enum", schema.getEnum());
+        }
+        
+        if (schema.getFormat() != null) {
+            jsonSchema.put("format", schema.getFormat());
+        }
+        
+        if (schema.getMinimum() != null) {
+            jsonSchema.put("minimum", schema.getMinimum());
+        }
+        
+        if (schema.getMaximum() != null) {
+            jsonSchema.put("maximum", schema.getMaximum());
+        }
+        
+        if (schema.getMinLength() != null) {
+            jsonSchema.put("minLength", schema.getMinLength());
+        }
+        
+        if (schema.getMaxLength() != null) {
+            jsonSchema.put("maxLength", schema.getMaxLength());
+        }
+        
+        if (schema.getPattern() != null) {
+            jsonSchema.put("pattern", schema.getPattern());
+        }
+        
+        return objectMapper.valueToTree(jsonSchema);
+    }
+    
+    private Map<String, Object> schemaToMap(io.swagger.v3.oas.models.media.Schema<?> schema, OpenAPI openAPI) {
+        Map<String, Object> map = new HashMap<>();
+        
+        if (schema.get$ref() != null) {
+            io.swagger.v3.oas.models.media.Schema<?> resolvedSchema = resolveSchemaReference(schema.get$ref(), openAPI);
+            if (resolvedSchema != null) {
+                return schemaToMap(resolvedSchema, openAPI);
+            }
+        }
+        
+        if (schema.getType() != null) map.put("type", schema.getType());
+        if (schema.getProperties() != null) {
+            Map<String, Object> properties = new HashMap<>();
+            for (Map.Entry<String, io.swagger.v3.oas.models.media.Schema> entry : schema.getProperties().entrySet()) {
+                properties.put(entry.getKey(), schemaToMap(entry.getValue(), openAPI));
+            }
+            map.put("properties", properties);
+        }
+        if (schema.getRequired() != null) map.put("required", schema.getRequired());
+        if (schema.getItems() != null) map.put("items", schemaToMap(schema.getItems(), openAPI));
+        if (schema.getEnum() != null) map.put("enum", schema.getEnum());
+        if (schema.getFormat() != null) map.put("format", schema.getFormat());
+        if (schema.getMinimum() != null) map.put("minimum", schema.getMinimum());
+        if (schema.getMaximum() != null) map.put("maximum", schema.getMaximum());
+        if (schema.getMinLength() != null) map.put("minLength", schema.getMinLength());
+        if (schema.getMaxLength() != null) map.put("maxLength", schema.getMaxLength());
+        if (schema.getPattern() != null) map.put("pattern", schema.getPattern());
+        
+        return map;
+    }
+    
+    private io.swagger.v3.oas.models.media.Schema<?> resolveSchemaReference(String ref, OpenAPI openAPI) {
+        if (ref == null || !ref.startsWith("#/components/schemas/")) {
+            return null;
+        }
+        
+        String schemaName = ref.substring("#/components/schemas/".length());
+        
+        if (openAPI.getComponents() != null && openAPI.getComponents().getSchemas() != null) {
+            return openAPI.getComponents().getSchemas().get(schemaName);
+        }
+        
+        return null;
+    }
+    
+    /**
      * Reload all schemas (for development/testing)
      */
     public void reload() {
         schemas.clear();
+        cachedJsonSchemas.clear();
         loadSchemas();
     }
 }
