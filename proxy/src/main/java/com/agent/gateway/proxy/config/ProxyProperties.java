@@ -19,7 +19,17 @@ import java.util.Map;
 public class ProxyProperties {
     
     private SchemaConfig schemas = new SchemaConfig();
+    private AuthConfig auth = new AuthConfig();
     private List<BackendDefinition> backends = new ArrayList<>();
+    
+    @Data
+    public static class AuthConfig {
+        private boolean enabled = true;
+        private String serviceUrl;  // Auth service URL
+        private String sessionIdHeader = "X-Session-Id";  // Header name for session ID
+        private String sessionIdCookie = "sessionId";  // Cookie name for session ID
+        private Duration timeout = Duration.ofSeconds(5);
+    }
     
     @Data
     public static class SchemaConfig {

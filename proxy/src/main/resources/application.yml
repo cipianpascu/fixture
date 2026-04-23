@@ -6,6 +6,14 @@ spring:
     name: backend-gateway-proxy
 
 gateway:
+  # Auth service configuration
+  auth:
+    enabled: true
+    service-url: http://localhost:8081/auth/tokens  # Auth service endpoint
+    session-id-header: X-Session-Id                 # Header name for session ID
+    session-id-cookie: sessionId                    # Cookie name for session ID
+    timeout: 5s
+  
   # Schema validation settings
   schemas:
     directory: classpath:schemas/

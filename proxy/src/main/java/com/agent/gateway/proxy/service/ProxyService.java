@@ -1,5 +1,6 @@
 package com.agent.gateway.proxy.service;
 
+import com.agent.gateway.proxy.auth.AuthTokens;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,7 @@ import org.springframework.web.client.RestTemplate;
 import java.net.URI;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.Optional;
 
 /**
  * Proxy Service - Lightweight Request Forwarding
@@ -23,6 +25,7 @@ import java.util.Enumeration;
 public class ProxyService {
     
     private final RestTemplate restTemplate = new RestTemplate();
+    private final AuthService authService;
     
     /**
      * Forward request to backend
@@ -39,6 +42,19 @@ public class ProxyService {
             
             // Build headers
             HttpHeaders headers = buildHeaders(request);
+            
+            // Get auth tokens and attach to headers
+            Optional<AuthTokens> authTokens = authService.getAuthTokens(request);
+            if (authTokens.isPresent()) {
+                AuthTokens tokens = authTokens.get();
+                if (tokens.getServiceToken() != null) {
+                    headers.set("X-Service-Token", tokens.getServiceToken());
+                }
+                if (tokens.getUserGrantsToken() != null) {
+                    headers.set("X-User-Grants-Token", tokens.getUserGrantsToken());
+                }
+                log.debug("Attached auth tokens to backend request");
+            }
             
             // Create HTTP entity
             HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
