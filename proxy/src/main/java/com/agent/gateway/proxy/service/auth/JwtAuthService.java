@@ -1,15 +1,14 @@
-package com.agent.gateway.proxy.service;
+package com.agent.gateway.proxy.service.auth;
 
 import com.agent.gateway.proxy.auth.AuthRequest;
 import com.agent.gateway.proxy.auth.AuthTokens;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.*;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Arrays;
@@ -17,44 +16,66 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Auth Service - Retrieves authentication tokens from auth service
+ * JWT Auth Service - Retrieves JWT tokens from external auth service
  */
-@Service
-@RequiredArgsConstructor
+@Component
 @Slf4j
-public class AuthService {
+public class JwtAuthService implements AuthService {
     
     private final ProxyProperties proxyProperties;
     private final RestTemplate restTemplate;
+    private final List<String> scopes;
     
-    public AuthService(ProxyProperties proxyProperties, RestTemplateBuilder restTemplateBuilder) {
+    public JwtAuthService(ProxyProperties proxyProperties, RestTemplateBuilder restTemplateBuilder) {
         this.proxyProperties = proxyProperties;
         this.restTemplate = restTemplateBuilder
             .setConnectTimeout(proxyProperties.getAuth().getTimeout())
             .setReadTimeout(proxyProperties.getAuth().getTimeout())
             .build();
+        this.scopes = List.of(); // Default empty, will be set per backend
     }
     
     /**
-     * Extract sessionId from request and retrieve auth tokens with backend-specific scopes
+     * Create JWT auth service with specific scopes
      */
-    public Optional<AuthTokens> getAuthTokens(HttpServletRequest request, List<String> scopes) {
+    public JwtAuthService(ProxyProperties proxyProperties, RestTemplateBuilder restTemplateBuilder, List<String> scopes) {
+        this.proxyProperties = proxyProperties;
+        this.restTemplate = restTemplateBuilder
+            .setConnectTimeout(proxyProperties.getAuth().getTimeout())
+            .setReadTimeout(proxyProperties.getAuth().getTimeout())
+            .build();
+        this.scopes = scopes;
+    }
+    
+    @Override
+    public void enrichHeaders(HttpServletRequest request, HttpHeaders headers) {
         if (!proxyProperties.getAuth().isEnabled()) {
             log.debug("Auth is disabled, skipping token retrieval");
-            return Optional.empty();
+            return;
         }
         
         // Extract sessionId from request
         Optional<String> sessionId = extractSessionId(request);
         if (sessionId.isEmpty()) {
             log.warn("No sessionId found in request");
-            return Optional.empty();
+            return;
         }
         
         log.debug("Found sessionId: {}, requesting scopes: {}", sessionId.get(), scopes);
         
         // Call auth service to get tokens
-        return retrieveTokens(sessionId.get(), scopes);
+        Optional<AuthTokens> authTokens = retrieveTokens(sessionId.get(), scopes);
+        
+        if (authTokens.isPresent()) {
+            AuthTokens tokens = authTokens.get();
+            if (tokens.getServiceToken() != null) {
+                headers.set("X-Service-Token", tokens.getServiceToken());
+            }
+            if (tokens.getUserGrantsToken() != null) {
+                headers.set("X-User-Grants-Token", tokens.getUserGrantsToken());
+            }
+            log.debug("Attached JWT auth tokens to request");
+        }
     }
     
     /**

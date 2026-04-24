@@ -24,26 +24,37 @@ gateway:
     
   # Backend configurations (file-based - NO database!)
   backends:
+    # Example: JWT authentication
     - name: example-service
       baseUrl: http://localhost:9001
       path: /api/v1/example
       schema: example-service.yaml
       timeout: 30s
       enabled: true
+      securityType: jwt
       authScopes:
         - read:users
         - write:users
       
-    # Add more backends as needed
-    # - name: user-service
-    #   baseUrl: http://localhost:9002
-    #   path: /api/v1/users
-    #   schema: user-service.yaml
-    #   timeout: 20s
+    # Example: Basic authentication
+    # - name: legacy-service
+    #   baseUrl: http://localhost:9003
+    #   path: /api/v1/legacy
+    #   schema: legacy-service.yaml
+    #   timeout: 30s
     #   enabled: true
-    #   authScopes:
-    #     - read:profile
-    #     - write:profile
+    #   securityType: basic
+    #   securityConfig:
+    #     username: ${LEGACY_SERVICE_USERNAME:admin}
+    #     password: ${LEGACY_SERVICE_PASSWORD:secret}
+    
+    # Example: No authentication
+    # - name: public-service
+    #   baseUrl: http://localhost:9004
+    #   path: /api/v1/public
+    #   schema: public-service.yaml
+    #   timeout: 30s
+    #   enabled: true
 
 # Actuator (health checks and metrics only)
 management:
