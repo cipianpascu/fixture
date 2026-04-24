@@ -1,5 +1,6 @@
 package com.agent.gateway.proxy.service;
 
+import com.agent.gateway.proxy.auth.AuthRequest;
 import com.agent.gateway.proxy.auth.AuthTokens;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import jakarta.servlet.http.Cookie;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -34,9 +36,9 @@ public class AuthService {
     }
     
     /**
-     * Extract sessionId from request and retrieve auth tokens
+     * Extract sessionId from request and retrieve auth tokens with backend-specific scopes
      */
-    public Optional<AuthTokens> getAuthTokens(HttpServletRequest request) {
+    public Optional<AuthTokens> getAuthTokens(HttpServletRequest request, List<String> scopes) {
         if (!proxyProperties.getAuth().isEnabled()) {
             log.debug("Auth is disabled, skipping token retrieval");
             return Optional.empty();
@@ -49,10 +51,10 @@ public class AuthService {
             return Optional.empty();
         }
         
-        log.debug("Found sessionId: {}", sessionId.get());
+        log.debug("Found sessionId: {}, requesting scopes: {}", sessionId.get(), scopes);
         
         // Call auth service to get tokens
-        return retrieveTokens(sessionId.get());
+        return retrieveTokens(sessionId.get(), scopes);
     }
     
     /**
@@ -80,9 +82,9 @@ public class AuthService {
     }
     
     /**
-     * Retrieve tokens from auth service
+     * Retrieve tokens from auth service with scopes
      */
-    private Optional<AuthTokens> retrieveTokens(String sessionId) {
+    private Optional<AuthTokens> retrieveTokens(String sessionId, List<String> scopes) {
         try {
             String authServiceUrl = proxyProperties.getAuth().getServiceUrl();
             if (authServiceUrl == null || authServiceUrl.isEmpty()) {
@@ -93,14 +95,18 @@ public class AuthService {
             // Build request to auth service
             HttpHeaders headers = new HttpHeaders();
             headers.set(proxyProperties.getAuth().getSessionIdHeader(), sessionId);
+            headers.setContentType(MediaType.APPLICATION_JSON);
             
-            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            // Create request body with scopes
+            AuthRequest authRequest = new AuthRequest(scopes);
+            HttpEntity<AuthRequest> entity = new HttpEntity<>(authRequest, headers);
             
             // Call auth service
-            log.debug("Calling auth service: {} with sessionId: {}", authServiceUrl, sessionId);
+            log.debug("Calling auth service: {} with sessionId: {} and scopes: {}", 
+                authServiceUrl, sessionId, scopes);
             ResponseEntity<AuthTokens> response = restTemplate.exchange(
                 authServiceUrl,
-                HttpMethod.GET,
+                HttpMethod.POST,
                 entity,
                 AuthTokens.class
             );

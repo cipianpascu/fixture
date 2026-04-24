@@ -43,8 +43,8 @@ public class ProxyService {
             // Build headers
             HttpHeaders headers = buildHeaders(request);
             
-            // Get auth tokens and attach to headers
-            Optional<AuthTokens> authTokens = authService.getAuthTokens(request);
+            // Get auth tokens with backend-specific scopes and attach to headers
+            Optional<AuthTokens> authTokens = authService.getAuthTokens(request, backend.getAuthScopes());
             if (authTokens.isPresent()) {
                 AuthTokens tokens = authTokens.get();
                 if (tokens.getServiceToken() != null) {

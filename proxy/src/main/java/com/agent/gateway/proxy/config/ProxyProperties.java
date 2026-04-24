@@ -50,5 +50,6 @@ public class ProxyProperties {
         private boolean enabled = true;
         private String securityType;
         private Map<String, String> securityConfig;
+        private List<String> authScopes = new ArrayList<>();  // Scopes for auth service token request
     }
 }

@@ -30,6 +30,9 @@ gateway:
       schema: example-service.yaml
       timeout: 30s
       enabled: true
+      authScopes:
+        - read:users
+        - write:users
       
     # Add more backends as needed
     # - name: user-service
@@ -38,6 +41,9 @@ gateway:
     #   schema: user-service.yaml
     #   timeout: 20s
     #   enabled: true
+    #   authScopes:
+    #     - read:profile
+    #     - write:profile
 
 # Actuator (health checks and metrics only)
 management:
