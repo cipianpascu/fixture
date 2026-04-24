@@ -10,26 +10,29 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.Paths;
-import lombok.RequiredArgsConstructor;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Schema Validation Service (OPTIMIZED)
+ * Schema Validation Service (OPTIMIZED - Quarkus)
  * 
  * Validates incoming requests against OpenAPI schemas.
  * Uses pre-compiled JSON schemas loaded at startup for performance.
  */
-@Service
-@RequiredArgsConstructor
+@ApplicationScoped
 @Slf4j
 public class SchemaValidationService {
     
-    private final SchemaLoader schemaLoader;
-    private final ProxyProperties proxyProperties;
+    @Inject
+    SchemaLoader schemaLoader;
+    
+    @Inject
+    ProxyProperties proxyProperties;
+    
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     /**
@@ -44,7 +47,7 @@ public class SchemaValidationService {
         
         // If no schema name provided
         if (schemaName == null || schemaName.isEmpty()) {
-            if (proxyProperties.getSchemas().isStrictMode()) {
+            if (proxyProperties.schemas().strictMode()) {
                 return ValidationResult.rejected("No schema configured for this backend");
             }
             log.warn("No schema configured, allowing request in non-strict mode");
@@ -55,7 +58,7 @@ public class SchemaValidationService {
         Optional<OpenAPI> schemaOpt = schemaLoader.getSchema(schemaName);
         
         if (schemaOpt.isEmpty()) {
-            if (proxyProperties.getSchemas().isStrictMode()) {
+            if (proxyProperties.schemas().strictMode()) {
                 return ValidationResult.rejected("Schema not found: " + schemaName);
             }
             log.warn("Schema not found, allowing request in non-strict mode: {}", schemaName);
@@ -80,7 +83,7 @@ public class SchemaValidationService {
         }
         
         // Validate request body if enabled and present (OPTIMIZED - uses cached schema)
-        if (proxyProperties.getSchemas().isValidateBodies() && 
+        if (proxyProperties.schemas().validateBodies() && 
             requestBody != null && !requestBody.isEmpty() && !requestBody.isBlank()) {
             ValidationResult bodyValidation = validateRequestBody(
                 schemaName, path, method, requestBody);

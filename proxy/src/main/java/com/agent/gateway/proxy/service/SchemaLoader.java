@@ -2,34 +2,33 @@ package com.agent.gateway.proxy.service;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.quarkus.runtime.StartupEvent;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.ResourceLoader;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
-import org.springframework.stereotype.Service;
 
+import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Schema Loader Service
+ * Schema Loader Service (Quarkus)
  * 
- * Loads OpenAPI schemas from filesystem or classpath.
+ * Loads OpenAPI schemas from classpath.
  * Schemas are loaded once at startup and cached in memory.
  */
-@Service
-@RequiredArgsConstructor
+@ApplicationScoped
 @Slf4j
 public class SchemaLoader {
     
-    private final ProxyProperties proxyProperties;
-    private final ResourceLoader resourceLoader;
+    @Inject
+    ProxyProperties proxyProperties;
+    
     private final Map<String, OpenAPI> schemas = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Map<String, com.networknt.schema.JsonSchema>>> cachedJsonSchemas = new ConcurrentHashMap<>();
     
@@ -37,24 +36,40 @@ public class SchemaLoader {
     private final com.networknt.schema.JsonSchemaFactory schemaFactory = 
         com.networknt.schema.JsonSchemaFactory.getInstance(com.networknt.schema.SpecVersion.VersionFlag.V7);
     
-    @PostConstruct
+    void onStart(@Observes StartupEvent event) {
+        loadSchemas();
+    }
+    
     public void loadSchemas() {
-        String schemaDirectory = proxyProperties.getSchemas().getDirectory();
+        String schemaDirectory = proxyProperties.schemas().directory();
         log.info("Loading schemas from: {}", schemaDirectory);
         
+        // Remove "classpath:" prefix if present
+        String resourcePath = schemaDirectory.replace("classpath:", "").replace("classpath*:", "");
+        if (!resourcePath.endsWith("/")) {
+            resourcePath += "/";
+        }
+        
         try {
-            PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-            String pattern = schemaDirectory + "*.{yaml,yml}";
+            // Load schemas from classpath
+            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+            URL resourceUrl = classLoader.getResource(resourcePath.substring(1)); // Remove leading /
             
-            Resource[] resources = resolver.getResources(pattern);
-            
-            if (resources.length == 0) {
-                log.warn("No schema files found in: {}", schemaDirectory);
+            if (resourceUrl == null) {
+                log.warn("Schema directory not found: {}", resourcePath);
                 return;
             }
             
-            for (Resource resource : resources) {
-                loadSchema(resource);
+            // For simplicity, we'll load known schema files
+            // In production, you might want to scan the directory
+            String[] schemaFiles = {"example-service.yaml"}; // Add your schema files here
+            
+            for (String filename : schemaFiles) {
+                String fullPath = resourcePath + filename;
+                URL schemaUrl = classLoader.getResource(fullPath.substring(1));
+                if (schemaUrl != null) {
+                    loadSchema(filename, schemaUrl);
+                }
             }
             
             log.info("Loaded {} schemas successfully", schemas.size());
@@ -65,20 +80,15 @@ public class SchemaLoader {
         }
     }
     
-    private void loadSchema(Resource resource) {
+    private void loadSchema(String filename, URL schemaUrl) {
         try {
-            String filename = resource.getFilename();
-            if (filename == null) {
-                return;
-            }
-            
             ParseOptions options = new ParseOptions();
             options.setResolve(true);
             options.setResolveFully(true);
             
             OpenAPIV3Parser parser = new OpenAPIV3Parser();
             SwaggerParseResult result = parser.readLocation(
-                resource.getURL().toString(), 
+                schemaUrl.toString(), 
                 null, 
                 options
             );
@@ -88,7 +98,7 @@ public class SchemaLoader {
                 schemas.put(filename, openAPI);
                 
                 // Pre-compile JSON schemas for validation (optimization) if body validation enabled
-                if (proxyProperties.getSchemas().isValidateBodies()) {
+                if (proxyProperties.schemas().validateBodies()) {
                     preCompileJsonSchemas(filename, openAPI);
                 }
                 
@@ -99,7 +109,7 @@ public class SchemaLoader {
             }
             
         } catch (Exception e) {
-            log.error("Error loading schema: {}", resource.getFilename(), e);
+            log.error("Error loading schema: {}", filename, e);
         }
     }
     

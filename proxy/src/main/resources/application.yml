@@ -1,15 +1,34 @@
-server:
-  port: 8080
-
-spring:
+# Quarkus HTTP configuration
+quarkus:
   application:
     name: backend-gateway-proxy
+  http:
+    port: 8080
+  log:
+    level: INFO
+    category:
+      "com.agent.gateway.proxy":
+        level: DEBUG
+    console:
+      format: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"
+  
+  # Health and Metrics
+  smallrye-health:
+    ui:
+      enable: true
+  micrometer:
+    enabled: true
+    export:
+      prometheus:
+        enabled: true
+        path: /q/metrics
 
+# Gateway configuration
 gateway:
   # Auth service configuration
   auth:
     enabled: true
-    service-url: http://localhost:8081/auth/tokens  # Auth service endpoint
+    service-url: http://localhost:8081              # Auth service base URL
     session-id-header: X-Session-Id                 # Header name for session ID
     session-id-cookie: sessionId                    # Cookie name for session ID
     timeout: 5s
@@ -55,43 +74,3 @@ gateway:
     #   schema: public-service.yaml
     #   timeout: 30s
     #   enabled: true
-
-# Actuator (health checks and metrics only)
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,prometheus
-  endpoint:
-    health:
-      show-details: always
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-
-# Resilience4j configuration
-resilience4j:
-  circuitbreaker:
-    configs:
-      default:
-        slidingWindowSize: 10
-        minimumNumberOfCalls: 5
-        failureRateThreshold: 50
-        waitDurationInOpenState: 30s
-        permittedNumberOfCallsInHalfOpenState: 3
-        automaticTransitionFromOpenToHalfOpenEnabled: true
-  
-  retry:
-    configs:
-      default:
-        maxAttempts: 3
-        waitDuration: 1s
-
-# Logging
-logging:
-  level:
-    root: INFO
-    com.agent.gateway.proxy: DEBUG
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"

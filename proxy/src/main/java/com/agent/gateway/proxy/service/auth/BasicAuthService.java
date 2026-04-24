@@ -2,16 +2,14 @@ package com.agent.gateway.proxy.service.auth;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
-import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Map;
 
 /**
- * Basic Auth Service - Provides Basic Authentication header from configured credentials
+ * Basic Auth Service - Provides Basic Authentication header from configured credentials (Quarkus)
  */
-@Component
 @Slf4j
 public class BasicAuthService implements AuthService {
     
@@ -26,8 +24,8 @@ public class BasicAuthService implements AuthService {
     }
     
     @Override
-    public void enrichHeaders(HttpServletRequest request, HttpHeaders headers) {
-        headers.set(HttpHeaders.AUTHORIZATION, basicAuthHeader);
+    public void enrichHeaders(HttpServletRequest request, Map<String, String> headers) {
+        headers.put("Authorization", basicAuthHeader);
         log.debug("Attached Basic auth header for user: {}", username);
     }
     

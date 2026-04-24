@@ -1,30 +1,50 @@
 package com.agent.gateway.proxy.service.auth;
 
+import com.agent.gateway.proxy.client.AuthClient;
 import com.agent.gateway.proxy.config.ProxyProperties;
-import lombok.RequiredArgsConstructor;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.web.client.RestTemplateBuilder;
-import org.springframework.stereotype.Component;
+import org.eclipse.microprofile.rest.client.RestClientBuilder;
+
+import java.net.URI;
+import java.util.Map;
 
 /**
- * Auth Service Factory - Creates appropriate auth service based on backend configuration
+ * Auth Service Factory - Creates appropriate auth service based on backend configuration (Quarkus)
  */
-@Component
-@RequiredArgsConstructor
+@ApplicationScoped
 @Slf4j
 public class AuthServiceFactory {
     
-    private final ProxyProperties proxyProperties;
-    private final RestTemplateBuilder restTemplateBuilder;
+    @Inject
+    ProxyProperties proxyProperties;
+    
+    private AuthClient authClient;
+    
+    /**
+     * Get or create auth client lazily using configured service URL
+     */
+    private AuthClient getAuthClient() {
+        if (authClient == null) {
+            String serviceUrl = proxyProperties.auth().serviceUrl();
+            log.debug("Creating AuthClient with base URL: {}", serviceUrl);
+            authClient = RestClientBuilder.newBuilder()
+                .baseUri(URI.create(serviceUrl))
+                .build(AuthClient.class);
+        }
+        return authClient;
+    }
     
     /**
      * Create auth service for a backend
      */
     public AuthService createAuthService(ProxyProperties.BackendDefinition backend) {
-        String authType = backend.getSecurityType();
+        String authType = backend.securityType().orElse(null);
         
         if (authType == null || authType.isEmpty()) {
-            log.debug("No auth type configured for backend: {}", backend.getName());
+            log.debug("No auth type configured for backend: {}", backend.name());
             return new NoOpAuthService();
         }
         
@@ -32,7 +52,7 @@ public class AuthServiceFactory {
             case "jwt" -> createJwtAuthService(backend);
             case "basic" -> createBasicAuthService(backend);
             default -> {
-                log.warn("Unknown auth type '{}' for backend: {}, using no-op", authType, backend.getName());
+                log.warn("Unknown auth type '{}' for backend: {}, using no-op", authType, backend.name());
                 yield new NoOpAuthService();
             }
         };
@@ -43,28 +63,29 @@ public class AuthServiceFactory {
      */
     private AuthService createJwtAuthService(ProxyProperties.BackendDefinition backend) {
         log.debug("Creating JWT auth service for backend: {} with scopes: {}", 
-            backend.getName(), backend.getAuthScopes());
-        return new JwtAuthService(proxyProperties, restTemplateBuilder, backend.getAuthScopes());
+            backend.name(), backend.authScopes());
+        return new JwtAuthService(
+            proxyProperties, 
+            getAuthClient(),  // Use lazy-initialized client
+            backend.authScopes()
+        );
     }
     
     /**
      * Create Basic auth service with credentials from backend config
      */
     private AuthService createBasicAuthService(ProxyProperties.BackendDefinition backend) {
-        String username = backend.getSecurityConfig() != null 
-            ? backend.getSecurityConfig().get("username") 
-            : null;
-        String password = backend.getSecurityConfig() != null 
-            ? backend.getSecurityConfig().get("password") 
-            : null;
+        Map<String, String> config = backend.securityConfig();
+        String username = config != null ? config.get("username") : null;
+        String password = config != null ? config.get("password") : null;
         
         if (username == null || password == null) {
-            log.error("Basic auth configured but username/password missing for backend: {}", backend.getName());
+            log.error("Basic auth configured but username/password missing for backend: {}", backend.name());
             return new NoOpAuthService();
         }
         
         log.debug("Creating Basic auth service for backend: {} with username: {}", 
-            backend.getName(), username);
+            backend.name(), username);
         return new BasicAuthService(username, password);
     }
     
@@ -73,8 +94,7 @@ public class AuthServiceFactory {
      */
     private static class NoOpAuthService implements AuthService {
         @Override
-        public void enrichHeaders(jakarta.servlet.http.HttpServletRequest request, 
-                                 org.springframework.http.HttpHeaders headers) {
+        public void enrichHeaders(HttpServletRequest request, Map<String, String> headers) {
             // Do nothing
         }
     }

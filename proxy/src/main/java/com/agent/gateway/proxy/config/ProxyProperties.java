@@ -1,55 +1,94 @@
 package com.agent.gateway.proxy.config;
 
-import lombok.Data;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
+import io.smallrye.config.ConfigMapping;
+import io.smallrye.config.WithDefault;
+import io.smallrye.config.WithName;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
- * Configuration properties for the proxy module
+ * Configuration properties for the proxy module (Quarkus)
  * Loaded from application.yml - NO database
  */
-@Component
-@ConfigurationProperties(prefix = "gateway")
-@Data
-public class ProxyProperties {
+@ConfigMapping(prefix = "gateway")
+public interface ProxyProperties {
     
-    private SchemaConfig schemas = new SchemaConfig();
-    private AuthConfig auth = new AuthConfig();
-    private List<BackendDefinition> backends = new ArrayList<>();
+    @WithName("schemas")
+    SchemaConfig schemas();
     
-    @Data
-    public static class AuthConfig {
-        private boolean enabled = true;
-        private String serviceUrl;  // Auth service URL
-        private String sessionIdHeader = "X-Session-Id";  // Header name for session ID
-        private String sessionIdCookie = "sessionId";  // Cookie name for session ID
-        private Duration timeout = Duration.ofSeconds(5);
+    @WithName("auth")
+    AuthConfig auth();
+    
+    @WithName("backends")
+    List<BackendDefinition> backends();
+    
+    interface AuthConfig {
+        @WithDefault("true")
+        boolean enabled();
+        
+        @WithName("service-url")
+        @WithDefault("http://localhost:8081")
+        String serviceUrl();
+        
+        @WithName("session-id-header")
+        @WithDefault("X-Session-Id")
+        String sessionIdHeader();
+        
+        @WithName("session-id-cookie")
+        @WithDefault("sessionId")
+        String sessionIdCookie();
+        
+        @WithDefault("5s")
+        Duration timeout();
     }
     
-    @Data
-    public static class SchemaConfig {
-        private String directory = "classpath:schemas/";
-        private boolean validateRequests = true;
-        private boolean validateBodies = true;  // Validate request body against schema
-        private boolean validateResponses = false;
-        private boolean strictMode = true;  // Reject if no schema found
+    interface SchemaConfig {
+        @WithDefault("classpath:schemas/")
+        String directory();
+        
+        @WithName("validate-requests")
+        @WithDefault("true")
+        boolean validateRequests();
+        
+        @WithName("validate-bodies")
+        @WithDefault("true")
+        boolean validateBodies();
+        
+        @WithName("validate-responses")
+        @WithDefault("false")
+        boolean validateResponses();
+        
+        @WithName("strict-mode")
+        @WithDefault("true")
+        boolean strictMode();
     }
     
-    @Data
-    public static class BackendDefinition {
-        private String name;
-        private String baseUrl;
-        private String path;
-        private String schema;  // Schema filename
-        private Duration timeout = Duration.ofSeconds(30);
-        private boolean enabled = true;
-        private String securityType;
-        private Map<String, String> securityConfig;
-        private List<String> authScopes = new ArrayList<>();  // Scopes for auth service token request
+    interface BackendDefinition {
+        String name();
+        
+        @WithName("baseUrl")
+        String baseUrl();
+        
+        String path();
+        
+        Optional<String> schema();
+        
+        @WithDefault("30s")
+        Duration timeout();
+        
+        @WithDefault("true")
+        boolean enabled();
+        
+        @WithName("securityType")
+        Optional<String> securityType();
+        
+        @WithName("securityConfig")
+        Map<String, String> securityConfig();
+        
+        @WithName("authScopes")
+        List<String> authScopes();
     }
 }
