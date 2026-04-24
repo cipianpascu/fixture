@@ -1,21 +1,31 @@
 package com.agent.gateway.proxy.service;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
+import com.agent.gateway.proxy.exception.AuthServiceException;
+import com.agent.gateway.proxy.exception.AuthenticationRequiredException;
+import com.agent.gateway.proxy.exception.ProxyConfigurationException;
+import com.agent.gateway.proxy.exception.UpstreamProxyException;
+import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.service.auth.AuthService;
 import com.agent.gateway.proxy.service.auth.AuthServiceFactory;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
+import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
+import org.eclipse.microprofile.faulttolerance.Fallback;
+import org.eclipse.microprofile.faulttolerance.Retry;
+import org.eclipse.microprofile.faulttolerance.exceptions.CircuitBreakerOpenException;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.Enumeration;
+import java.util.Locale;
 import java.util.HashMap;
+import java.util.Set;
 import java.util.Map;
 
 /**
@@ -26,6 +36,15 @@ import java.util.Map;
 @ApplicationScoped
 @Slf4j
 public class ProxyService {
+
+    private static final Set<String> HOP_BY_HOP_HEADERS = Set.of(
+        "connection",
+        "content-length",
+        "expect",
+        "host",
+        "transfer-encoding",
+        "upgrade"
+    );
     
     @Inject
     AuthServiceFactory authServiceFactory;
@@ -37,15 +56,29 @@ public class ProxyService {
     /**
      * Forward request to backend
      */
+    @Retry(
+        maxRetries = 2,
+        delay = 200,
+        retryOn = {UpstreamProxyException.class, AuthServiceException.class},
+        abortOn = {ProxyConfigurationException.class, AuthenticationRequiredException.class}
+    )
+    @CircuitBreaker(
+        requestVolumeThreshold = 4,
+        failureRatio = 0.5,
+        delay = 5000,
+        failOn = {UpstreamProxyException.class, AuthServiceException.class},
+        skipOn = {ProxyConfigurationException.class, AuthenticationRequiredException.class}
+    )
+    @Fallback(fallbackMethod = "forwardFallback")
     public Response forward(
             ProxyProperties.BackendDefinition backend,
-            HttpServletRequest request,
+            ProxyRequestContext request,
             String requestBody) {
         
         try {
             // Build target URL
             String targetUrl = buildTargetUrl(backend, request);
-            log.info("Forwarding {} request to: {}", request.getMethod(), targetUrl);
+            log.info("Forwarding {} request to: {}", request.method(), targetUrl);
             
             // Build headers
             Map<String, String> headers = buildHeaders(request);
@@ -67,7 +100,7 @@ public class ProxyService {
                 ? HttpRequest.BodyPublishers.ofString(requestBody)
                 : HttpRequest.BodyPublishers.noBody();
             
-            requestBuilder.method(request.getMethod(), bodyPublisher);
+            requestBuilder.method(request.method(), bodyPublisher);
             
             // Forward request
             HttpResponse<String> response = httpClient.send(
@@ -90,19 +123,49 @@ public class ProxyService {
             
             return responseBuilder.build();
             
-        } catch (Exception e) {
-            log.error("Error forwarding request to backend: {}", backend.name(), e);
-            return Response.status(Response.Status.BAD_GATEWAY)
-                .entity("{\"error\":\"Failed to forward request: " + e.getMessage() + "\"}")
+        } catch (IOException e) {
+            throw new UpstreamProxyException("Failed to reach backend '%s'".formatted(backend.name()), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new UpstreamProxyException("Request to backend '%s' was interrupted".formatted(backend.name()), e);
+        }
+    }
+
+    public Response forwardFallback(
+            ProxyProperties.BackendDefinition backend,
+            ProxyRequestContext request,
+            String requestBody,
+            Throwable failure) {
+        log.error("Proxy forwarding failed for backend {} after fault-tolerance handling", backend.name(), failure);
+
+        if (failure instanceof ProxyConfigurationException configurationException) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(Map.of("error", configurationException.getMessage()))
                 .build();
         }
+
+        if (failure instanceof AuthenticationRequiredException authenticationRequiredException) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                .entity(Map.of("error", authenticationRequiredException.getMessage()))
+                .build();
+        }
+
+        if (failure instanceof CircuitBreakerOpenException) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                .entity(Map.of("error", "Backend '%s' is temporarily unavailable".formatted(backend.name())))
+                .build();
+        }
+
+        return Response.status(Response.Status.BAD_GATEWAY)
+            .entity(Map.of("error", "Failed to forward request to backend '%s'".formatted(backend.name())))
+            .build();
     }
     
     /**
      * Build target URL for backend
      */
-    private String buildTargetUrl(ProxyProperties.BackendDefinition backend, HttpServletRequest request) {
-        String requestURI = request.getRequestURI();
+    private String buildTargetUrl(ProxyProperties.BackendDefinition backend, ProxyRequestContext request) {
+        String requestURI = request.requestUri();
         
         // Remove the /api/v1/{backendName} prefix
         String prefix = "/api/v1/" + backend.name();
@@ -114,7 +177,7 @@ public class ProxyService {
         String targetUrl = backend.baseUrl() + backend.path() + path;
         
         // Add query string if present
-        String queryString = request.getQueryString();
+        String queryString = request.queryString();
         if (queryString != null && !queryString.isEmpty()) {
             targetUrl += "?" + queryString;
         }
@@ -125,22 +188,10 @@ public class ProxyService {
     /**
      * Build HTTP headers from request
      */
-    private Map<String, String> buildHeaders(HttpServletRequest request) {
-        Map<String, String> headers = new HashMap<>();
-        
-        Enumeration<String> headerNames = request.getHeaderNames();
-        if (headerNames != null) {
-            while (headerNames.hasMoreElements()) {
-                String headerName = headerNames.nextElement();
-                String headerValue = request.getHeader(headerName);
-                
-                // Skip Host header (will be set by HttpClient)
-                if (!"Host".equalsIgnoreCase(headerName)) {
-                    headers.put(headerName, headerValue);
-                }
-            }
-        }
-        
+    private Map<String, String> buildHeaders(ProxyRequestContext request) {
+        Map<String, String> headers = new HashMap<>(request.headers());
+        headers.entrySet().removeIf(entry ->
+            HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT)));
         return headers;
     }
 }

@@ -2,13 +2,16 @@ package com.agent.gateway.proxy.service.auth;
 
 import com.agent.gateway.proxy.client.AuthClient;
 import com.agent.gateway.proxy.config.ProxyProperties;
+import com.agent.gateway.proxy.exception.ProxyConfigurationException;
+import com.agent.gateway.proxy.model.ProxyRequestContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.rest.client.RestClientBuilder;
 
 import java.net.URI;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.Map;
 
 /**
@@ -32,6 +35,8 @@ public class AuthServiceFactory {
             log.debug("Creating AuthClient with base URL: {}", serviceUrl);
             authClient = RestClientBuilder.newBuilder()
                 .baseUri(URI.create(serviceUrl))
+                .connectTimeout(proxyProperties.auth().timeout().toMillis(), TimeUnit.MILLISECONDS)
+                .readTimeout(proxyProperties.auth().timeout().toMillis(), TimeUnit.MILLISECONDS)
                 .build(AuthClient.class);
         }
         return authClient;
@@ -50,10 +55,11 @@ public class AuthServiceFactory {
         
         return switch (authType.toLowerCase()) {
             case "jwt" -> createJwtAuthService(backend);
-            case "basic" -> createBasicAuthService(backend);
+            case "basic", "basic_auth" -> createBasicAuthService(backend);
+            case "none" -> new NoOpAuthService();
             default -> {
-                log.warn("Unknown auth type '{}' for backend: {}, using no-op", authType, backend.name());
-                yield new NoOpAuthService();
+                throw new ProxyConfigurationException(
+                    "Unsupported securityType '%s' for backend '%s'".formatted(authType, backend.name()));
             }
         };
     }
@@ -63,11 +69,11 @@ public class AuthServiceFactory {
      */
     private AuthService createJwtAuthService(ProxyProperties.BackendDefinition backend) {
         log.debug("Creating JWT auth service for backend: {} with scopes: {}", 
-            backend.name(), backend.authScopes());
+            backend.name(), backend.authScopes().orElse(List.of()));
         return new JwtAuthService(
             proxyProperties, 
             getAuthClient(),  // Use lazy-initialized client
-            backend.authScopes()
+            backend.authScopes().orElse(List.of())
         );
     }
     
@@ -80,8 +86,8 @@ public class AuthServiceFactory {
         String password = config != null ? config.get("password") : null;
         
         if (username == null || password == null) {
-            log.error("Basic auth configured but username/password missing for backend: {}", backend.name());
-            return new NoOpAuthService();
+            throw new ProxyConfigurationException(
+                "Basic auth configured but username/password missing for backend '%s'".formatted(backend.name()));
         }
         
         log.debug("Creating Basic auth service for backend: {} with username: {}", 
@@ -94,7 +100,7 @@ public class AuthServiceFactory {
      */
     private static class NoOpAuthService implements AuthService {
         @Override
-        public void enrichHeaders(HttpServletRequest request, Map<String, String> headers) {
+        public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers) {
             // Do nothing
         }
     }

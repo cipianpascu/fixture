@@ -26,6 +26,9 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 @Slf4j
 public class SchemaValidationService {
+
+    private record PathMatch(String schemaPath, PathItem pathItem) {
+    }
     
     @Inject
     SchemaLoader schemaLoader;
@@ -68,14 +71,14 @@ public class SchemaValidationService {
         OpenAPI schema = schemaOpt.get();
         
         // Find matching path in schema
-        PathItem pathItem = findMatchingPath(schema, path);
-        if (pathItem == null) {
+        PathMatch pathMatch = findMatchingPath(schema, path);
+        if (pathMatch == null) {
             return ValidationResult.rejected(
                 String.format("Path '%s' not found in schema '%s'", path, schemaName));
         }
         
         // Get operation for the HTTP method
-        Operation operation = getOperation(pathItem, method);
+        Operation operation = getOperation(pathMatch.pathItem(), method);
         if (operation == null) {
             return ValidationResult.rejected(
                 String.format("Method %s not allowed for path %s in schema %s", 
@@ -86,7 +89,7 @@ public class SchemaValidationService {
         if (proxyProperties.schemas().validateBodies() && 
             requestBody != null && !requestBody.isEmpty() && !requestBody.isBlank()) {
             ValidationResult bodyValidation = validateRequestBody(
-                schemaName, path, method, requestBody);
+                schemaName, pathMatch.schemaPath(), method, requestBody);
             if (!bodyValidation.isValid()) {
                 return bodyValidation;
             }
@@ -103,14 +106,14 @@ public class SchemaValidationService {
      * on every request. This provides significant performance improvement.
      */
     private ValidationResult validateRequestBody(
-            String schemaName, String path, String method, String requestBody) {
+            String schemaName, String schemaPath, String method, String requestBody) {
         try {
             // Get pre-compiled JSON schema from cache (loaded at startup)
-            JsonSchema jsonSchema = schemaLoader.getCompiledJsonSchema(schemaName, path, method);
+            JsonSchema jsonSchema = schemaLoader.getCompiledJsonSchema(schemaName, schemaPath, method);
             
             if (jsonSchema == null) {
                 // No body schema defined for this operation - allow request
-                log.debug("No request body schema defined for {} {}", method, path);
+                log.debug("No request body schema defined for {} {}", method, schemaPath);
                 return ValidationResult.allowed();
             }
             
@@ -142,7 +145,7 @@ public class SchemaValidationService {
      * Find matching path in OpenAPI schema
      * Handles path parameters like /users/{id}
      */
-    private PathItem findMatchingPath(OpenAPI schema, String requestPath) {
+    private PathMatch findMatchingPath(OpenAPI schema, String requestPath) {
         Paths paths = schema.getPaths();
         if (paths == null) {
             return null;
@@ -151,14 +154,14 @@ public class SchemaValidationService {
         // First try exact match
         PathItem exactMatch = paths.get(requestPath);
         if (exactMatch != null) {
-            return exactMatch;
+            return new PathMatch(requestPath, exactMatch);
         }
         
         // Try pattern matching for paths with parameters
         for (Map.Entry<String, PathItem> entry : paths.entrySet()) {
             String schemaPath = entry.getKey();
             if (pathMatches(schemaPath, requestPath)) {
-                return entry.getValue();
+                return new PathMatch(schemaPath, entry.getValue());
             }
         }
         

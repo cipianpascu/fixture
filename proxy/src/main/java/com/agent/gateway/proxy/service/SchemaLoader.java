@@ -12,9 +12,14 @@ import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 
+import java.net.URI;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Schema Loader Service (Quarkus)
@@ -43,32 +48,26 @@ public class SchemaLoader {
     public void loadSchemas() {
         String schemaDirectory = proxyProperties.schemas().directory();
         log.info("Loading schemas from: {}", schemaDirectory);
-        
-        // Remove "classpath:" prefix if present
-        String resourcePath = schemaDirectory.replace("classpath:", "").replace("classpath*:", "");
-        if (!resourcePath.endsWith("/")) {
-            resourcePath += "/";
-        }
-        
+
         try {
-            // Load schemas from classpath
-            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-            URL resourceUrl = classLoader.getResource(resourcePath.substring(1)); // Remove leading /
-            
-            if (resourceUrl == null) {
-                log.warn("Schema directory not found: {}", resourcePath);
+            List<String> schemaFiles = proxyProperties.backends().stream()
+                .map(ProxyProperties.BackendDefinition::schema)
+                .flatMap(Optional::stream)
+                .filter(schemaName -> !schemaName.isBlank())
+                .distinct()
+                .collect(Collectors.toList());
+
+            if (schemaFiles.isEmpty()) {
+                log.info("No backend schemas configured");
                 return;
             }
-            
-            // For simplicity, we'll load known schema files
-            // In production, you might want to scan the directory
-            String[] schemaFiles = {"example-service.yaml"}; // Add your schema files here
-            
+
             for (String filename : schemaFiles) {
-                String fullPath = resourcePath + filename;
-                URL schemaUrl = classLoader.getResource(fullPath.substring(1));
-                if (schemaUrl != null) {
-                    loadSchema(filename, schemaUrl);
+                Optional<URL> schemaUrl = resolveSchemaUrl(schemaDirectory, filename);
+                if (schemaUrl.isPresent()) {
+                    loadSchema(filename, schemaUrl.get());
+                } else {
+                    log.error("Configured schema '{}' could not be resolved from {}", filename, schemaDirectory);
                 }
             }
             
@@ -78,6 +77,41 @@ public class SchemaLoader {
         } catch (Exception e) {
             log.error("Failed to load schemas from: {}", schemaDirectory, e);
         }
+    }
+
+    private Optional<URL> resolveSchemaUrl(String schemaDirectory, String filename) {
+        try {
+            if (schemaDirectory.startsWith("classpath:") || schemaDirectory.startsWith("classpath*:")) {
+                String resourcePath = schemaDirectory
+                    .replace("classpath*:", "")
+                    .replace("classpath:", "");
+                if (!resourcePath.endsWith("/")) {
+                    resourcePath += "/";
+                }
+                if (resourcePath.startsWith("/")) {
+                    resourcePath = resourcePath.substring(1);
+                }
+
+                ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+                return Optional.ofNullable(classLoader.getResource(resourcePath + filename));
+            }
+
+            Path basePath;
+            if (schemaDirectory.startsWith("file:")) {
+                basePath = Paths.get(URI.create(schemaDirectory));
+            } else {
+                basePath = Paths.get(schemaDirectory);
+            }
+
+            Path schemaPath = basePath.resolve(filename);
+            if (Files.exists(schemaPath)) {
+                return Optional.of(schemaPath.toUri().toURL());
+            }
+        } catch (Exception e) {
+            log.error("Failed to resolve schema '{}' from {}", filename, schemaDirectory, e);
+        }
+
+        return Optional.empty();
     }
     
     private void loadSchema(String filename, URL schemaUrl) {

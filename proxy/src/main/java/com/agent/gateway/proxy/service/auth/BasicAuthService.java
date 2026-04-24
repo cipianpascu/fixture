@@ -1,6 +1,6 @@
 package com.agent.gateway.proxy.service.auth;
 
-import jakarta.servlet.http.HttpServletRequest;
+import com.agent.gateway.proxy.model.ProxyRequestContext;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
@@ -24,7 +24,7 @@ public class BasicAuthService implements AuthService {
     }
     
     @Override
-    public void enrichHeaders(HttpServletRequest request, Map<String, String> headers) {
+    public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers) {
         headers.put("Authorization", basicAuthHeader);
         log.debug("Attached Basic auth header for user: {}", username);
     }

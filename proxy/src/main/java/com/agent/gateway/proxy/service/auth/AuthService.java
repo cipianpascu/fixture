@@ -1,6 +1,6 @@
 package com.agent.gateway.proxy.service.auth;
 
-import jakarta.servlet.http.HttpServletRequest;
+import com.agent.gateway.proxy.model.ProxyRequestContext;
 
 import java.util.Map;
 
@@ -14,8 +14,8 @@ public interface AuthService {
     /**
      * Enrich request headers with authentication tokens/credentials
      * 
-     * @param request The incoming HTTP request
+     * @param request The incoming HTTP request context
      * @param headers The headers to enrich (will be modified in place)
      */
-    void enrichHeaders(HttpServletRequest request, Map<String, String> headers);
+    void enrichHeaders(ProxyRequestContext request, Map<String, String> headers);
 }

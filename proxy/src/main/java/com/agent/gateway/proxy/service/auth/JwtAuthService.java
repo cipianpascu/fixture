@@ -3,11 +3,11 @@ package com.agent.gateway.proxy.service.auth;
 import com.agent.gateway.proxy.auth.AuthTokens;
 import com.agent.gateway.proxy.client.AuthClient;
 import com.agent.gateway.proxy.config.ProxyProperties;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
+import com.agent.gateway.proxy.exception.AuthenticationRequiredException;
+import com.agent.gateway.proxy.exception.AuthServiceException;
+import com.agent.gateway.proxy.model.ProxyRequestContext;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,7 +29,7 @@ public class JwtAuthService implements AuthService {
     }
     
     @Override
-    public void enrichHeaders(HttpServletRequest request, Map<String, String> headers) {
+    public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers) {
         if (!proxyProperties.auth().enabled()) {
             log.debug("Auth is disabled, skipping token retrieval");
             return;
@@ -38,8 +38,8 @@ public class JwtAuthService implements AuthService {
         // Extract sessionId from request
         Optional<String> sessionId = extractSessionId(request);
         if (sessionId.isEmpty()) {
-            log.warn("No sessionId found in request");
-            return;
+            throw new AuthenticationRequiredException(
+                "Missing session identifier for JWT-authenticated backend");
         }
         
         log.debug("Found sessionId: {}, requesting scopes: {}", sessionId.get(), scopes);
@@ -56,28 +56,28 @@ public class JwtAuthService implements AuthService {
                 headers.put("X-User-Grants-Token", tokens.getUserGrantsToken());
             }
             log.debug("Attached JWT auth tokens to request");
+            return;
         }
+
+        throw new AuthServiceException("Auth service returned no usable tokens");
     }
     
     /**
      * Extract sessionId from request headers or cookies
      */
-    private Optional<String> extractSessionId(HttpServletRequest request) {
+    private Optional<String> extractSessionId(ProxyRequestContext request) {
         // Try header first
         String headerName = proxyProperties.auth().sessionIdHeader();
-        String sessionId = request.getHeader(headerName);
+        String sessionId = request.header(headerName);
         if (sessionId != null && !sessionId.isEmpty()) {
             return Optional.of(sessionId);
         }
         
         // Try cookie
         String cookieName = proxyProperties.auth().sessionIdCookie();
-        Cookie[] cookies = request.getCookies();
-        if (cookies != null) {
-            return Arrays.stream(cookies)
-                .filter(cookie -> cookieName.equals(cookie.getName()))
-                .map(Cookie::getValue)
-                .findFirst();
+        String cookieValue = request.cookie(cookieName);
+        if (cookieValue != null && !cookieValue.isEmpty()) {
+            return Optional.of(cookieValue);
         }
         
         return Optional.empty();
@@ -98,16 +98,17 @@ public class JwtAuthService implements AuthService {
             AuthTokens tokens = authClient.getTokens(sessionId, authRequest);
             
             if (tokens != null) {
+                if (tokens.getServiceToken() == null && tokens.getUserGrantsToken() == null) {
+                    throw new AuthServiceException("Auth service returned an empty token payload");
+                }
                 log.debug("Retrieved auth tokens successfully");
                 return Optional.of(tokens);
             }
             
-            log.warn("Auth service returned null response");
-            return Optional.empty();
+            throw new AuthServiceException("Auth service returned null response");
             
         } catch (Exception e) {
-            log.error("Error retrieving tokens from auth service", e);
-            return Optional.empty();
+            throw new AuthServiceException("Error retrieving tokens from auth service", e);
         }
     }
 }

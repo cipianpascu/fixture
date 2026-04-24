@@ -89,6 +89,6 @@ public interface ProxyProperties {
         Map<String, String> securityConfig();
         
         @WithName("authScopes")
-        List<String> authScopes();
+        Optional<List<String>> authScopes();
     }
 }

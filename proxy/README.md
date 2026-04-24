@@ -6,7 +6,7 @@ Lightweight production routing module with schema validation - **now powered by 
 
 **Key Features:**
 - ✅ File-based configuration (NO database)
-- ✅ Schema validation from filesystem
+- ✅ Schema validation from configured schema files
 - ✅ MicroProfile Fault Tolerance (Circuit breaker & retry)
 - ✅ NO admin API
 - ✅ **Super fast startup (~1s)**
@@ -117,7 +117,7 @@ http://localhost:8080/q/health-ui
 The proxy validates:
 1. ✅ **Path exists** in schema
 2. ✅ **HTTP method** is allowed
-3. ⚠️ **Request body** (TODO: full validation)
+3. ✅ **Request body** for JSON requests, including templated paths
 
 ### Example Validation
 
@@ -268,11 +268,9 @@ http://localhost:8080/q/dev
 
 ## TODO
 
-- [ ] Complete request body validation
 - [ ] Response validation (if enabled)
 - [ ] Request/response logging
 - [ ] Rate limiting
-- [ ] Authentication/Authorization
 - [ ] WebSocket support
 
 ## See Also
