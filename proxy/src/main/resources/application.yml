@@ -3,7 +3,8 @@ quarkus:
   application:
     name: backend-gateway-proxy
   http:
-    port: 8080
+    host: 0.0.0.0
+    port: ${PORT:8080}
   log:
     level: INFO
     category:
@@ -22,6 +23,19 @@ quarkus:
       prometheus:
         enabled: true
         path: /q/metrics
+  container-image:
+    builder: jib
+    build: false
+    push: false
+    registry: ${CONTAINER_IMAGE_REGISTRY:}
+    group: ${CONTAINER_IMAGE_GROUP:}
+    name: ${CONTAINER_IMAGE_NAME:${quarkus.application.name}}
+    tag: ${CONTAINER_IMAGE_TAG:latest}
+  jib:
+    base-jvm-image: eclipse-temurin:21-jre
+    ports:
+      - ${PORT:8080}
+    use-current-timestamp: true
 
 # Gateway configuration
 gateway:
@@ -32,6 +46,27 @@ gateway:
     session-id-header: X-Session-Id                 # Header name for session ID
     session-id-cookie: sessionId                    # Cookie name for session ID
     timeout: 5s
+    # tls-profile: internal-ca                    # Optional named TLS profile for HTTPS auth services
+
+  # Optional outbound TLS profiles for auth service and backend calls
+  tls:
+    profiles: {}
+    # profiles:
+    #   internal-ca:
+    #     truststore:
+    #       path: /secrets/truststore.p12
+    #       password: ${TRUSTSTORE_PASSWORD:changeit}
+    #       type: PKCS12
+    #   mutual-tls:
+    #     truststore:
+    #       path: /secrets/truststore.p12
+    #       password: ${TRUSTSTORE_PASSWORD:changeit}
+    #       type: PKCS12
+    #     keystore:
+    #       path: /secrets/client-keystore.p12
+    #       password: ${KEYSTORE_PASSWORD:changeit}
+    #       key-password: ${KEY_PASSWORD:${KEYSTORE_PASSWORD:changeit}}
+    #       type: PKCS12
   
   # Schema validation settings
   schemas:
@@ -51,6 +86,7 @@ gateway:
       timeout: 30s
       enabled: true
       securityType: jwt
+      # tls-profile: internal-ca
       authScopes:
         - read:users
         - write:users
@@ -63,6 +99,7 @@ gateway:
     #   timeout: 30s
     #   enabled: true
     #   securityType: basic
+    #   tls-profile: mutual-tls
     #   securityConfig:
     #     username: ${LEGACY_SERVICE_USERNAME:admin}
     #     password: ${LEGACY_SERVICE_PASSWORD:secret}

@@ -78,6 +78,23 @@ java -Dgateway.schemas.directory=file:/etc/gateway/schemas/ \
   -jar target/quarkus-app/quarkus-run.jar
 ```
 
+### Cloud Run
+
+The proxy is prepared for Cloud Run and Jib-based image builds.
+
+```bash
+mvn -pl proxy clean package \
+  -DskipTests \
+  -Dquarkus.container-image.build=true \
+  -Dquarkus.container-image.push=true \
+  -Dquarkus.container-image.registry="${REGION}-docker.pkg.dev" \
+  -Dquarkus.container-image.group="${PROJECT_ID}/${REPOSITORY}" \
+  -Dquarkus.container-image.name="backend-gateway-proxy" \
+  -Dquarkus.container-image.tag="${IMAGE_TAG}"
+```
+
+See [CLOUDRUN.md](./CLOUDRUN.md) for the full deployment flow.
+
 ### Native Compilation (Optional)
 
 ```bash

@@ -21,6 +21,9 @@ public interface ProxyProperties {
     
     @WithName("auth")
     AuthConfig auth();
+
+    @WithName("tls")
+    Optional<TlsConfig> tls();
     
     @WithName("backends")
     List<BackendDefinition> backends();
@@ -43,6 +46,9 @@ public interface ProxyProperties {
         
         @WithDefault("5s")
         Duration timeout();
+
+        @WithName("tls-profile")
+        Optional<String> tlsProfile();
     }
     
     interface SchemaConfig {
@@ -90,5 +96,31 @@ public interface ProxyProperties {
         
         @WithName("authScopes")
         Optional<List<String>> authScopes();
+
+        @WithName("tls-profile")
+        Optional<String> tlsProfile();
+    }
+
+    interface TlsConfig {
+        @WithName("profiles")
+        Map<String, TlsProfile> profiles();
+    }
+
+    interface TlsProfile {
+        Optional<StoreConfig> truststore();
+
+        Optional<StoreConfig> keystore();
+    }
+
+    interface StoreConfig {
+        String path();
+
+        Optional<String> password();
+
+        @WithDefault("PKCS12")
+        String type();
+
+        @WithName("key-password")
+        Optional<String> keyPassword();
     }
 }

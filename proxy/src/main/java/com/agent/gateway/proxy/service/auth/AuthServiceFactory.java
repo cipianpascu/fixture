@@ -4,6 +4,7 @@ import com.agent.gateway.proxy.client.AuthClient;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
+import com.agent.gateway.proxy.service.TlsContextFactory;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,9 @@ public class AuthServiceFactory {
     
     @Inject
     ProxyProperties proxyProperties;
+
+    @Inject
+    TlsContextFactory tlsContextFactory;
     
     private AuthClient authClient;
     
@@ -33,11 +37,12 @@ public class AuthServiceFactory {
         if (authClient == null) {
             String serviceUrl = proxyProperties.auth().serviceUrl();
             log.debug("Creating AuthClient with base URL: {}", serviceUrl);
-            authClient = RestClientBuilder.newBuilder()
+            RestClientBuilder builder = RestClientBuilder.newBuilder()
                 .baseUri(URI.create(serviceUrl))
                 .connectTimeout(proxyProperties.auth().timeout().toMillis(), TimeUnit.MILLISECONDS)
-                .readTimeout(proxyProperties.auth().timeout().toMillis(), TimeUnit.MILLISECONDS)
-                .build(AuthClient.class);
+                .readTimeout(proxyProperties.auth().timeout().toMillis(), TimeUnit.MILLISECONDS);
+            tlsContextFactory.createAuthSslContext().ifPresent(builder::sslContext);
+            authClient = builder.build(AuthClient.class);
         }
         return authClient;
     }

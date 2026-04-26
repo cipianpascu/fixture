@@ -23,6 +23,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.Set;
@@ -48,10 +49,11 @@ public class ProxyService {
     
     @Inject
     AuthServiceFactory authServiceFactory;
-    
-    private final HttpClient httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(30))
-        .build();
+
+    @Inject
+    TlsContextFactory tlsContextFactory;
+
+    private final Map<String, HttpClient> httpClients = new ConcurrentHashMap<>();
     
     /**
      * Forward request to backend
@@ -103,7 +105,7 @@ public class ProxyService {
             requestBuilder.method(request.method(), bodyPublisher);
             
             // Forward request
-            HttpResponse<String> response = httpClient.send(
+            HttpResponse<String> response = getHttpClient(backend).send(
                 requestBuilder.build(),
                 HttpResponse.BodyHandlers.ofString()
             );
@@ -193,5 +195,17 @@ public class ProxyService {
         headers.entrySet().removeIf(entry ->
             HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT)));
         return headers;
+    }
+
+    private HttpClient getHttpClient(ProxyProperties.BackendDefinition backend) {
+        String clientKey = backend.tlsProfile().orElse("__default__");
+        return httpClients.computeIfAbsent(clientKey, ignored -> buildHttpClient(backend));
+    }
+
+    private HttpClient buildHttpClient(ProxyProperties.BackendDefinition backend) {
+        HttpClient.Builder builder = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(30));
+        tlsContextFactory.createBackendSslContext(backend).ifPresent(builder::sslContext);
+        return builder.build();
     }
 }
