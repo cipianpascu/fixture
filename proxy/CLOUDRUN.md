@@ -157,6 +157,62 @@ gcloud run deploy "${SERVICE}" \
   --set-env-vars=TRUSTSTORE_PASSWORD=changeit,KEYSTORE_PASSWORD=changeit
 ```
 
+### Calling private Cloud Run backends
+
+If the proxy calls another private Cloud Run service, do not use mTLS client certificates for that hop. Use `securityType: cloudrun` so the proxy sends a Google-signed ID token on the request.
+
+Recommended backend config:
+
+```yaml
+gateway:
+  backends:
+    - name: orders
+      baseUrl: https://orders-service-abcde-ew.a.run.app
+      path: /
+      schema: orders-service.yaml
+      enabled: true
+      securityType: cloudrun
+      securityConfig:
+        audience: https://orders-service-abcde-ew.a.run.app/
+```
+
+Notes:
+
+- The proxy sends the token in `X-Serverless-Authorization`.
+- If `securityConfig.audience` is omitted, the proxy derives it from `baseUrl`.
+- The target Cloud Run service must grant `roles/run.invoker` to the proxy service account.
+- Keep the audience set to the service `run.app` URL even if you call a tagged revision URL.
+
+### Using a private Cloud Run auth service
+
+If `gateway.auth.service-url` points to a private Cloud Run OAuth or auth service, configure Cloud Run IAM auth on `gateway.auth` itself. This is separate from the backend `securityType`.
+
+Example:
+
+```yaml
+gateway:
+  auth:
+    service-url: https://oauth-service-abcde-ew.a.run.app
+    security-type: cloudrun
+    security-config:
+      audience: https://oauth-service-abcde-ew.a.run.app/
+  backends:
+    - name: legacy-service
+      baseUrl: https://legacy.example.com
+      path: /api
+      schema: legacy-service.yaml
+      securityType: jwt
+      authScopes:
+        - read:users
+```
+
+In that flow:
+
+- the proxy authenticates to the Cloud Run auth service with a Google ID token
+- the auth service returns OAuth/JWT tokens
+- the proxy forwards those tokens to the legacy backend according to `securityType: jwt`
+- add `tls-profile` on the legacy backend only if that backend needs private CA trust or mTLS
+
 ## Health Checks
 
 Cloud Run can use the built-in Quarkus health endpoints:

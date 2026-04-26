@@ -46,6 +46,9 @@ gateway:
     session-id-header: X-Session-Id                 # Header name for session ID
     session-id-cookie: sessionId                    # Cookie name for session ID
     timeout: 5s
+    # security-type: cloudrun                      # Optional Cloud Run IAM auth for private auth services
+    # security-config:
+    #   audience: https://oauth-service-abcde-ew.a.run.app/
     # tls-profile: internal-ca                    # Optional named TLS profile for HTTPS auth services
 
   # Optional outbound TLS profiles for auth service and backend calls
@@ -103,6 +106,17 @@ gateway:
     #   securityConfig:
     #     username: ${LEGACY_SERVICE_USERNAME:admin}
     #     password: ${LEGACY_SERVICE_PASSWORD:secret}
+
+    # Example: Cloud Run service-to-service authentication
+    # - name: cloudrun-service
+    #   baseUrl: https://orders-service-abcde-ew.a.run.app
+    #   path: /
+    #   schema: orders-service.yaml
+    #   timeout: 30s
+    #   enabled: true
+    #   securityType: cloudrun
+    #   securityConfig:
+    #     audience: https://orders-service-abcde-ew.a.run.app/
     
     # Example: No authentication
     # - name: public-service

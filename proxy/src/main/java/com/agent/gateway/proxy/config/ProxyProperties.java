@@ -49,6 +49,12 @@ public interface ProxyProperties {
 
         @WithName("tls-profile")
         Optional<String> tlsProfile();
+
+        @WithName("security-type")
+        Optional<String> securityType();
+
+        @WithName("security-config")
+        Map<String, String> securityConfig();
     }
     
     interface SchemaConfig {

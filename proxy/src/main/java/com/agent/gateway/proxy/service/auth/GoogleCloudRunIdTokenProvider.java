@@ -1,0 +1,35 @@
+package com.agent.gateway.proxy.service.auth;
+
+import com.agent.gateway.proxy.exception.AuthServiceException;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.IdTokenCredentials;
+import com.google.auth.oauth2.IdTokenProvider;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.io.IOException;
+
+@ApplicationScoped
+public class GoogleCloudRunIdTokenProvider implements CloudRunIdTokenProvider {
+
+    @Override
+    public String getIdToken(String audience) {
+        try {
+            GoogleCredentials credentials = GoogleCredentials.getApplicationDefault();
+            if (!(credentials instanceof IdTokenProvider idTokenProvider)) {
+                throw new AuthServiceException(
+                    "Application default credentials do not support ID token generation");
+            }
+
+            IdTokenCredentials tokenCredentials = IdTokenCredentials.newBuilder()
+                .setIdTokenProvider(idTokenProvider)
+                .setTargetAudience(audience)
+                .setOptions(java.util.List.of(IdTokenProvider.Option.FORMAT_FULL))
+                .build();
+            tokenCredentials.refreshAccessToken();
+            return tokenCredentials.getAccessToken().getTokenValue();
+        } catch (IOException e) {
+            throw new AuthServiceException(
+                "Failed to generate Cloud Run ID token for audience '%s'".formatted(audience), e);
+        }
+    }
+}

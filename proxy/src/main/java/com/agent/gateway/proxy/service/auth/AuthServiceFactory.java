@@ -27,6 +27,9 @@ public class AuthServiceFactory {
 
     @Inject
     TlsContextFactory tlsContextFactory;
+
+    @Inject
+    CloudRunIdTokenProvider cloudRunIdTokenProvider;
     
     private AuthClient authClient;
     
@@ -42,9 +45,30 @@ public class AuthServiceFactory {
                 .connectTimeout(proxyProperties.auth().timeout().toMillis(), TimeUnit.MILLISECONDS)
                 .readTimeout(proxyProperties.auth().timeout().toMillis(), TimeUnit.MILLISECONDS);
             tlsContextFactory.createAuthSslContext().ifPresent(builder::sslContext);
+            configureAuthServiceSecurity(builder, serviceUrl);
             authClient = builder.build(AuthClient.class);
         }
         return authClient;
+    }
+
+    private void configureAuthServiceSecurity(RestClientBuilder builder, String serviceUrl) {
+        String authSecurityType = proxyProperties.auth().securityType().orElse("none");
+        if (authSecurityType.isBlank() || "none".equalsIgnoreCase(authSecurityType)) {
+            return;
+        }
+
+        if ("cloudrun".equalsIgnoreCase(authSecurityType) || "cloud_run".equalsIgnoreCase(authSecurityType)) {
+            String audience = CloudRunAudienceResolver.resolveAudience(
+                serviceUrl,
+                proxyProperties.auth().securityConfig(),
+                "auth service"
+            );
+            builder.register(new CloudRunAuthRequestFilter(cloudRunIdTokenProvider, audience));
+            return;
+        }
+
+        throw new ProxyConfigurationException(
+            "Unsupported auth.security-type '%s'".formatted(authSecurityType));
     }
     
     /**
@@ -61,6 +85,7 @@ public class AuthServiceFactory {
         return switch (authType.toLowerCase()) {
             case "jwt" -> createJwtAuthService(backend);
             case "basic", "basic_auth" -> createBasicAuthService(backend);
+            case "cloudrun", "cloud_run" -> createCloudRunAuthService(backend);
             case "none" -> new NoOpAuthService();
             default -> {
                 throw new ProxyConfigurationException(
@@ -98,6 +123,15 @@ public class AuthServiceFactory {
         log.debug("Creating Basic auth service for backend: {} with username: {}", 
             backend.name(), username);
         return new BasicAuthService(username, password);
+    }
+
+    private AuthService createCloudRunAuthService(ProxyProperties.BackendDefinition backend) {
+        log.debug("Creating Cloud Run auth service for backend: {}", backend.name());
+        return new CloudRunAuthService(
+            cloudRunIdTokenProvider,
+            backend.baseUrl(),
+            backend.securityConfig()
+        );
     }
     
     /**

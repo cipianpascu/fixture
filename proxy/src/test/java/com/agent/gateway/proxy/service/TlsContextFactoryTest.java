@@ -124,6 +124,16 @@ class TlsContextFactoryTest {
                     public Optional<String> tlsProfile() {
                         return Optional.empty();
                     }
+
+                    @Override
+                    public Optional<String> securityType() {
+                        return Optional.empty();
+                    }
+
+                    @Override
+                    public Map<String, String> securityConfig() {
+                        return Map.of();
+                    }
                 };
             }
 

@@ -18,6 +18,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
     private HttpServer authServer;
 
     private static final AtomicInteger RETRY_SESSION_CALLS = new AtomicInteger();
+    private static final AtomicInteger CLOUD_RUN_AUTH_SESSION_CALLS = new AtomicInteger();
 
     @Override
     public Map<String, String> start() {
@@ -29,6 +30,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         }
 
         RETRY_SESSION_CALLS.set(0);
+        CLOUD_RUN_AUTH_SESSION_CALLS.set(0);
         registerBackendHandlers();
         registerAuthHandlers();
 
@@ -45,6 +47,8 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.schemas.strict-mode", "true");
         config.put("gateway.auth.enabled", "true");
         config.put("gateway.auth.service-url", authBaseUrl);
+        config.put("gateway.auth.security-type", "cloudrun");
+        config.put("gateway.auth.security-config.audience", "https://oauth-service-ew.a.run.app/");
 
         config.put("gateway.backends[0].name", "secondary-service");
         config.put("gateway.backends[0].baseUrl", backendBaseUrl);
@@ -86,6 +90,14 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[4].securityType", "jwt");
         config.put("gateway.backends[4].authScopes[0]", "read:users");
 
+        config.put("gateway.backends[5].name", "cloudrun-service");
+        config.put("gateway.backends[5].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[5].path", "/cloudrun");
+        config.put("gateway.backends[5].schema", "secondary-service.yaml");
+        config.put("gateway.backends[5].enabled", "true");
+        config.put("gateway.backends[5].securityType", "cloudrun");
+        config.put("gateway.backends[5].securityConfig.audience", "https://orders-service-ew.a.run.app/");
+
         return config;
     }
 
@@ -103,6 +115,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         return RETRY_SESSION_CALLS.get();
     }
 
+    public static int getCloudRunAuthSessionCalls() {
+        return CLOUD_RUN_AUTH_SESSION_CALLS.get();
+    }
+
     private void registerBackendHandlers() {
         backendServer.createContext("/internal/secondary/ping", exchange ->
             respond(exchange, 200, "{\"status\":\"secondary-ok\"}"));
@@ -110,15 +126,30 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             respond(exchange, 200, "{\"ok\":true}"));
         backendServer.createContext("/jwt/ping", exchange ->
             respond(exchange, 200, "{\"status\":\"jwt-ok\"}"));
+        backendServer.createContext("/cloudrun/ping", exchange ->
+            respond(exchange, 200,
+                "{\"serverlessAuthorization\":\"%s\"}".formatted(
+                    exchange.getRequestHeaders().getFirst("X-Serverless-Authorization"))));
     }
 
     private void registerAuthHandlers() {
         authServer.createContext("/auth/tokens", exchange -> {
             String sessionId = exchange.getRequestHeaders().getFirst("X-Session-Id");
+            String serverlessAuthorization = exchange.getRequestHeaders().getFirst("X-Serverless-Authorization");
             if ("retry-session".equals(sessionId)) {
                 int callNumber = RETRY_SESSION_CALLS.incrementAndGet();
                 if (callNumber == 1) {
                     respond(exchange, 503, "{\"error\":\"temporary auth outage\"}");
+                    return;
+                }
+                respond(exchange, 200, "{\"serviceToken\":\"svc-token\",\"userGrantsToken\":\"usr-token\"}");
+                return;
+            }
+
+            if ("cloudrun-auth-session".equals(sessionId)) {
+                CLOUD_RUN_AUTH_SESSION_CALLS.incrementAndGet();
+                if (!"Bearer test-id-token-for:https://oauth-service-ew.a.run.app/".equals(serverlessAuthorization)) {
+                    respond(exchange, 401, "{\"error\":\"missing cloud run auth\"}");
                     return;
                 }
                 respond(exchange, 200, "{\"serviceToken\":\"svc-token\",\"userGrantsToken\":\"usr-token\"}");
