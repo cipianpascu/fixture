@@ -1,86 +1,268 @@
-# Backend Gateway Proxy Module (Quarkus)
+# Backend Gateway Proxy
 
-## Overview
+Quarkus-based HTTP proxy for routing agent traffic to multiple upstream backends with request validation, backend-specific authentication, and outbound TLS support.
 
-Lightweight production routing module with schema validation - **now powered by Quarkus** for faster startup and lower memory footprint.
+## What This Module Does
 
-**Key Features:**
-- ✅ File-based configuration (NO database)
-- ✅ Schema validation from configured schema files
-- ✅ MicroProfile Fault Tolerance (Circuit breaker & retry)
-- ✅ NO admin API
-- ✅ **Super fast startup (~1s)**
-- ✅ **Low memory (~50MB)**
-- ✅ Production-ready
-- ✅ Native compilation support (GraalVM)
+- Routes requests from `/api/v1/{backend-name}/...` to configured upstream services
+- Validates request path, method, and optional JSON body against configured OpenAPI schemas
+- Applies backend-specific auth before forwarding
+- Supports outbound TLS truststores and mTLS client certificates
+- Supports Cloud Run service-to-service IAM auth for backends and for the auth service itself
+- Exposes Quarkus health and Prometheus endpoints
 
-## Architecture
+This module is file-configured only. There is no database and no admin API.
 
-```
-Request → ProxyController → Schema Validation → Forward to Backend
-                                ↓
-                          Loaded from /schemas/
-```
+## Request Flow
+
+1. Incoming request hits `ProxyResource`
+2. Backend is resolved from `gateway.backends`
+3. Request is validated against the backend schema
+4. Auth strategy enriches headers
+5. Request is forwarded to the upstream backend
+6. Upstream response is returned as-is
+
+Main implementation points:
+
+- Routing entrypoint: [src/main/java/com/agent/gateway/proxy/resource/ProxyResource.java](./src/main/java/com/agent/gateway/proxy/resource/ProxyResource.java)
+- Forwarding: [src/main/java/com/agent/gateway/proxy/service/ProxyService.java](./src/main/java/com/agent/gateway/proxy/service/ProxyService.java)
+- Schema loading: [src/main/java/com/agent/gateway/proxy/service/SchemaLoader.java](./src/main/java/com/agent/gateway/proxy/service/SchemaLoader.java)
+- Request validation: [src/main/java/com/agent/gateway/proxy/service/SchemaValidationService.java](./src/main/java/com/agent/gateway/proxy/service/SchemaValidationService.java)
+- Config mapping: [src/main/java/com/agent/gateway/proxy/config/ProxyProperties.java](./src/main/java/com/agent/gateway/proxy/config/ProxyProperties.java)
+
+## Auth Modes
+
+Per backend, `securityType` can be:
+
+- `none`: no auth enrichment
+- `basic`: injects HTTP Basic credentials from `securityConfig.username/password`
+- `jwt`: calls the configured auth service and forwards returned tokens as `X-Service-Token` and `X-User-Grants-Token`
+- `cloudrun`: generates a Google ID token and sends it as `X-Serverless-Authorization`
+
+Auth-service calls are configured separately under `gateway.auth`. The auth service itself can also use Cloud Run IAM auth with:
+
+- `gateway.auth.security-type=cloudrun`
+- `gateway.auth.security-config.audience=...`
+
+## TLS Model
+
+`tls-profile` is transport-level configuration, not application auth.
+
+Use `gateway.tls.profiles` to define reusable outbound TLS settings:
+
+- `truststore`: trust private or internal CAs
+- `keystore`: present a client certificate for mTLS
+
+Then reference a profile from:
+
+- `gateway.auth.tls-profile`
+- `gateway.backends[n].tls-profile`
+
+Typical usage:
+
+- Cloud Run upstream with normal public HTTPS: usually no `tls-profile`
+- Legacy/private backend with private CA or mTLS: use `tls-profile`
+- Private Cloud Run upstream: use `securityType: cloudrun` or `gateway.auth.security-type: cloudrun`
 
 ## Configuration
 
-### Application Properties (`application.yml`)
+The runtime config lives in [src/main/resources/application.yml](./src/main/resources/application.yml).
+
+Minimal shape:
 
 ```yaml
 gateway:
+  auth:
+    enabled: true
+    service-url: http://localhost:8081
+
   schemas:
     directory: classpath:schemas/
     validate-requests: true
+    validate-bodies: true
     strict-mode: true
-    
+
   backends:
-    - name: my-service
+    - name: example-service
       baseUrl: http://localhost:9001
-      path: /api/v1/service
-      schema: my-service.yaml
+      path: /api/v1/example
+      schema: example-service.yaml
       enabled: true
+      securityType: jwt
+      authScopes:
+        - read:users
 ```
 
-### Schema Files (`src/main/resources/schemas/`)
+### Backend Fields
 
-Place OpenAPI 3.0 schema files in this directory:
+- `name`: backend identifier used in `/api/v1/{name}/...`
+- `baseUrl`: upstream host
+- `path`: upstream base path prefix
+- `schema`: OpenAPI schema filename under `schemas/`
+- `timeout`: request timeout for upstream call
+- `enabled`: whether the backend is routable
+- `securityType`: `none`, `basic`, `jwt`, or `cloudrun`
+- `securityConfig`: auth-specific key/value config
+- `authScopes`: scopes requested from the auth service for `jwt`
+- `tls-profile`: optional outbound TLS profile name
 
+### Auth Service Fields
+
+- `service-url`: URL used for JWT token retrieval
+- `session-id-header`: incoming header to read the session id from
+- `session-id-cookie`: fallback cookie to read the session id from
+- `timeout`: auth service timeout
+- `security-type`: optional auth for calling the auth service itself
+- `security-config`: config for `security-type`
+- `tls-profile`: optional outbound TLS profile name
+
+### TLS Profile Fields
+
+```yaml
+gateway:
+  tls:
+    profiles:
+      partner-mtls:
+        truststore:
+          path: /secrets/truststore.p12
+          password: ${TRUSTSTORE_PASSWORD}
+          type: PKCS12
+        keystore:
+          path: /secrets/client-keystore.p12
+          password: ${KEYSTORE_PASSWORD}
+          key-password: ${KEY_PASSWORD:${KEYSTORE_PASSWORD}}
+          type: PKCS12
 ```
+
+## Schemas
+
+Place OpenAPI files under:
+
+```text
 src/main/resources/schemas/
-├── user-service.yaml
-├── payment-service.yaml
-└── order-service.yaml
 ```
 
-## Running the Proxy
+At startup, the proxy loads every schema referenced by `gateway.backends[*].schema`.
 
-### Development (with Hot Reload)
+Validation behavior:
+
+- path validation: enabled by `gateway.schemas.validate-requests`
+- JSON body validation: enabled by `gateway.schemas.validate-bodies`
+- strict schema presence: enabled by `gateway.schemas.strict-mode`
+- response validation: currently not implemented
+
+## Examples
+
+### Public or internal backend with no auth
+
+```yaml
+gateway:
+  backends:
+    - name: public-service
+      baseUrl: http://localhost:9004
+      path: /api/v1/public
+      schema: public-service.yaml
+      enabled: true
+      securityType: none
+```
+
+### Legacy backend with Basic auth and mTLS
+
+```yaml
+gateway:
+  tls:
+    profiles:
+      legacy-mtls:
+        truststore:
+          path: /secrets/truststore.p12
+          password: ${TRUSTSTORE_PASSWORD}
+          type: PKCS12
+        keystore:
+          path: /secrets/client-keystore.p12
+          password: ${KEYSTORE_PASSWORD}
+          key-password: ${KEY_PASSWORD:${KEYSTORE_PASSWORD}}
+          type: PKCS12
+
+  backends:
+    - name: legacy-service
+      baseUrl: https://legacy.example.com
+      path: /api
+      schema: legacy-service.yaml
+      securityType: basic
+      tls-profile: legacy-mtls
+      securityConfig:
+        username: ${LEGACY_SERVICE_USERNAME}
+        password: ${LEGACY_SERVICE_PASSWORD}
+```
+
+### Private Cloud Run OAuth service plus legacy JWT backend
+
+```yaml
+gateway:
+  auth:
+    service-url: https://oauth-service-abcde-ew.a.run.app
+    security-type: cloudrun
+    security-config:
+      audience: https://oauth-service-abcde-ew.a.run.app/
+
+  backends:
+    - name: legacy-service
+      baseUrl: https://legacy.example.com
+      path: /api
+      schema: legacy-service.yaml
+      securityType: jwt
+      authScopes:
+        - read:users
+```
+
+### Private Cloud Run backend
+
+```yaml
+gateway:
+  backends:
+    - name: orders
+      baseUrl: https://orders-service-abcde-ew.a.run.app
+      path: /
+      schema: orders-service.yaml
+      securityType: cloudrun
+      securityConfig:
+        audience: https://orders-service-abcde-ew.a.run.app/
+```
+
+## Running Locally
+
+Development:
 
 ```bash
 cd proxy
 mvn quarkus:dev
 ```
 
-Access dev UI at: http://localhost:8080/q/dev
-
-### Production
+Package:
 
 ```bash
-# Build
 cd proxy
 mvn clean package
-
-# Run (JVM mode)
-java -jar target/quarkus-app/quarkus-run.jar
-
-# Run with custom config
-java -Dgateway.schemas.directory=file:/etc/gateway/schemas/ \
-  -jar target/quarkus-app/quarkus-run.jar
 ```
 
-### Cloud Run
+Run packaged app:
 
-The proxy is prepared for Cloud Run and Jib-based image builds.
+```bash
+java -jar target/quarkus-app/quarkus-run.jar
+```
+
+## Health and Metrics
+
+- Health: `/q/health`
+- Liveness: `/q/health/live`
+- Readiness: `/q/health/ready`
+- Metrics: `/q/metrics`
+
+## Cloud Run
+
+This module is prepared for Cloud Run and Jib-based image creation.
+
+Build and push:
 
 ```bash
 mvn -pl proxy clean package \
@@ -93,171 +275,25 @@ mvn -pl proxy clean package \
   -Dquarkus.container-image.tag="${IMAGE_TAG}"
 ```
 
-See [CLOUDRUN.md](./CLOUDRUN.md) for the full deployment flow.
+For Cloud Run deployment, mounted config files, TLS secret mounting, and service-to-service auth details, see [CLOUDRUN.md](./CLOUDRUN.md).
 
-### Native Compilation (Optional)
+## Testing
 
-```bash
-# Build native executable (requires GraalVM)
-mvn package -Pnative
-
-# Run native executable (~20ms startup!)
-./target/backend-gateway-proxy-1.0.0-SNAPSHOT-runner
-```
-
-## Usage
-
-### Routing Requests
+Run module tests:
 
 ```bash
-# Request will be validated against example-service.yaml
-curl http://localhost:8080/api/v1/example-service/users
-
-# POST request with validation
-curl -X POST http://localhost:8080/api/v1/example-service/users \
-  -H "Content-Type: application/json" \
-  -d '{"name":"John","email":"john@example.com"}'
+mvn -pl proxy test
 ```
 
-### Health Check
+Current tests cover:
 
-```bash
-# Health endpoint
-curl http://localhost:8080/q/health
-
-# Health UI
-http://localhost:8080/q/health-ui
-```
-
-## Schema Validation
-
-The proxy validates:
-1. ✅ **Path exists** in schema
-2. ✅ **HTTP method** is allowed
-3. ✅ **Request body** for JSON requests, including templated paths
-
-### Example Validation
-
-**Request:**
-```bash
-GET /api/v1/example-service/users/123
-```
-
-**Validation:**
-1. Load `example-service.yaml`
-2. Check if `/users/{id}` exists
-3. Check if `GET` is allowed
-4. ✅ Forward to backend
-
-**Invalid Request:**
-```bash
-DELETE /api/v1/example-service/unknown
-```
-
-**Response:**
-```json
-{
-  "error": "Request validation failed",
-  "details": ["Path '/unknown' not found in schema 'example-service.yaml'"]
-}
-```
-
-## Adding New Backends
-
-1. **Add OpenAPI schema** to `src/main/resources/schemas/`:
-   ```bash
-   cp my-service.yaml proxy/src/main/resources/schemas/
-   ```
-
-2. **Update `application.yml`**:
-   ```yaml
-   gateway:
-     backends:
-       - name: my-service
-         baseUrl: http://api.myservice.com
-         path: /api/v1/myservice
-         schema: my-service.yaml
-         enabled: true
-   ```
-
-3. **Restart** the proxy
-
-4. **Test**:
-   ```bash
-   curl http://localhost:8080/api/v1/my-service/endpoint
-   ```
-
-## Docker Deployment
-
-```dockerfile
-FROM eclipse-temurin:21-jre-alpine
-
-# Copy JAR
-COPY target/backend-gateway-proxy-1.0.0-SNAPSHOT.jar /app.jar
-
-# Copy schemas
-COPY src/main/resources/schemas/ /etc/gateway/schemas/
-
-# Environment
-ENV GATEWAY_SCHEMAS_DIRECTORY=file:/etc/gateway/schemas/
-
-EXPOSE 8080
-
-ENTRYPOINT ["java", "-jar", "/app.jar"]
-```
-
-## Kubernetes ConfigMap
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gateway-schemas
-data:
-  user-service.yaml: |
-    openapi: 3.0.0
-    info:
-      title: User Service
-    paths:
-      /users:
-        get: ...
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gateway-config
-data:
-  application.yml: |
-    gateway:
-      schemas:
-        directory: /etc/schemas/
-      backends:
-        - name: user-service
-          baseUrl: http://user-service:8080
-          schema: user-service.yaml
-```
-
-## Differences from Fixture Module
-
-| Feature | Fixture | Proxy (Quarkus) |
-|---------|---------|-----------------|
-| Database | ✅ Yes | ❌ No |
-| Admin API | ✅ Yes | ❌ No |
-| Mocking | ✅ Yes | ❌ No |
-| Schema Validation | ⚠️ Optional | ✅ **Enforced** |
-| Configuration | DB + API | YAML only |
-| Framework | Spring Boot | **Quarkus** |
-| Startup Time | ~10s | **~1s** (JVM) |
-| Memory | ~512MB | **~50MB** |
-| Native Build | ❌ No | ✅ **Yes** |
-| Use Case | Testing | **Production** |
-
-## Monitoring
-
-### Metrics (Prometheus)
-
-```bash
-# Metrics endpoint
+- schema loading for multiple configured backends
+- request body validation on templated paths
+- auth misconfiguration handling
+- retry behavior for transient auth-service failures
+- Cloud Run backend auth
+- Cloud Run auth-service calls
+- TLS profile loading
 curl http://localhost:8080/q/metrics
 
 # Prometheus format
