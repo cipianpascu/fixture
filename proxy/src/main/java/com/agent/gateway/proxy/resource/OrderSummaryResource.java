@@ -98,10 +98,11 @@ public class OrderSummaryResource extends BaseResource {
         try {
             JsonNode order = parseEntity(ordersResponse);
             JsonNode payment = parseEntity(paymentsResponse);
-            return Response.ok(Map.of(
+            Response response = Response.ok(Map.of(
                 "order", order,
                 "payment", payment
             )).type(MediaType.APPLICATION_JSON).build();
+            return applyResponseContract(resourceConfig.schema(), contractPath, incomingRequest, response);
         } catch (Exception e) {
             log.error("Failed to compose order summary response", e);
             return Response.status(Response.Status.BAD_GATEWAY)

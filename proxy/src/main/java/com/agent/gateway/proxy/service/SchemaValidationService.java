@@ -2,10 +2,15 @@ package com.agent.gateway.proxy.service;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.validation.ValidationResult;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.JsonSchema;
 import com.networknt.schema.ValidationMessage;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
@@ -97,6 +102,71 @@ public class SchemaValidationService {
         
         log.debug("Request validated successfully: {} {} against {}", method, path, schemaName);
         return ValidationResult.allowed();
+    }
+
+    public Response applyResponseContract(
+        String schemaName,
+        String method,
+        String path,
+        Response response) {
+
+        if (!proxyProperties.schemas().validateResponses() || response == null) {
+            return response;
+        }
+
+        if (schemaName == null || schemaName.isBlank()) {
+            return response;
+        }
+
+        MediaType mediaType = response.getMediaType();
+        if (mediaType != null && !mediaType.isCompatible(MediaType.APPLICATION_JSON_TYPE)) {
+            return response;
+        }
+
+        Object entity = response.getEntity();
+        if (entity == null) {
+            return response;
+        }
+
+        Optional<OpenAPI> schemaOpt = schemaLoader.getSchema(schemaName);
+        if (schemaOpt.isEmpty()) {
+            return response;
+        }
+
+        PathMatch pathMatch = findMatchingPath(schemaOpt.get(), path);
+        if (pathMatch == null) {
+            return response;
+        }
+
+        Operation operation = getOperation(pathMatch.pathItem(), method);
+        if (operation == null || operation.getResponses() == null) {
+            return response;
+        }
+
+        io.swagger.v3.oas.models.responses.ApiResponse apiResponse = responseSchemaForStatus(
+            operation,
+            response.getStatus()
+        );
+        if (apiResponse == null || apiResponse.getContent() == null) {
+            return response;
+        }
+
+        io.swagger.v3.oas.models.media.MediaType responseMediaType = apiResponse.getContent().get("application/json");
+        if (responseMediaType == null) {
+            responseMediaType = apiResponse.getContent().get("*/*");
+        }
+        if (responseMediaType == null || responseMediaType.getSchema() == null) {
+            return response;
+        }
+
+        try {
+            JsonNode body = toJsonNode(entity);
+            JsonNode trimmedBody = trimToSchema(body, responseMediaType.getSchema(), schemaOpt.get());
+            return rebuildResponse(response, trimmedBody);
+        } catch (Exception e) {
+            log.warn("Failed to trim response payload for {} {} against {}", method, path, schemaName, e);
+            return response;
+        }
     }
     
     /**
@@ -213,5 +283,110 @@ public class SchemaValidationService {
             case "OPTIONS" -> pathItem.getOptions();
             default -> null;
         };
+    }
+
+    private io.swagger.v3.oas.models.responses.ApiResponse responseSchemaForStatus(Operation operation, int statusCode) {
+        if (operation.getResponses() == null) {
+            return null;
+        }
+
+        io.swagger.v3.oas.models.responses.ApiResponse exact = operation.getResponses().get(String.valueOf(statusCode));
+        if (exact != null) {
+            return exact;
+        }
+
+        String family = (statusCode / 100) + "XX";
+        io.swagger.v3.oas.models.responses.ApiResponse familyMatch = operation.getResponses().get(family);
+        if (familyMatch != null) {
+            return familyMatch;
+        }
+
+        return operation.getResponses().get("default");
+    }
+
+    private JsonNode toJsonNode(Object entity) throws Exception {
+        if (entity instanceof JsonNode jsonNode) {
+            return jsonNode;
+        }
+        if (entity instanceof String body) {
+            return objectMapper.readTree(body);
+        }
+        return objectMapper.valueToTree(entity);
+    }
+
+    private JsonNode trimToSchema(
+        JsonNode value,
+        io.swagger.v3.oas.models.media.Schema<?> schema,
+        OpenAPI openAPI) {
+
+        if (value == null || value.isNull() || schema == null) {
+            return value;
+        }
+
+        io.swagger.v3.oas.models.media.Schema<?> resolvedSchema = resolveSchema(schema, openAPI);
+        if (resolvedSchema == null) {
+            return value;
+        }
+
+        if ("array".equals(resolvedSchema.getType()) && value.isArray() && resolvedSchema.getItems() != null) {
+            ArrayNode trimmedArray = objectMapper.createArrayNode();
+            for (JsonNode item : value) {
+                trimmedArray.add(trimToSchema(item, resolvedSchema.getItems(), openAPI));
+            }
+            return trimmedArray;
+        }
+
+        boolean objectLike = "object".equals(resolvedSchema.getType()) || resolvedSchema.getProperties() != null;
+        if (objectLike && value.isObject()) {
+            ObjectNode trimmedObject = objectMapper.createObjectNode();
+            Map<String, io.swagger.v3.oas.models.media.Schema> properties = resolvedSchema.getProperties();
+            if (properties == null || properties.isEmpty()) {
+                return trimmedObject;
+            }
+
+            for (Map.Entry<String, io.swagger.v3.oas.models.media.Schema> property : properties.entrySet()) {
+                JsonNode propertyValue = value.get(property.getKey());
+                if (propertyValue != null) {
+                    trimmedObject.set(property.getKey(), trimToSchema(propertyValue, property.getValue(), openAPI));
+                }
+            }
+            return trimmedObject;
+        }
+
+        return value;
+    }
+
+    private io.swagger.v3.oas.models.media.Schema<?> resolveSchema(
+        io.swagger.v3.oas.models.media.Schema<?> schema,
+        OpenAPI openAPI) {
+
+        if (schema.get$ref() == null) {
+            return schema;
+        }
+        return resolveSchemaReference(schema.get$ref(), openAPI);
+    }
+
+    private io.swagger.v3.oas.models.media.Schema<?> resolveSchemaReference(String ref, OpenAPI openAPI) {
+        if (ref == null || !ref.startsWith("#/components/schemas/")) {
+            return null;
+        }
+
+        String schemaName = ref.substring("#/components/schemas/".length());
+        if (openAPI.getComponents() == null || openAPI.getComponents().getSchemas() == null) {
+            return null;
+        }
+        return openAPI.getComponents().getSchemas().get(schemaName);
+    }
+
+    private Response rebuildResponse(Response original, JsonNode entity) {
+        Response.ResponseBuilder builder = Response.status(original.getStatus());
+        MultivaluedMap<String, Object> headers = original.getHeaders();
+        headers.forEach((name, values) -> {
+            if ("content-length".equalsIgnoreCase(name)) {
+                return;
+            }
+            values.forEach(value -> builder.header(name, value));
+        });
+        return builder.entity(entity.toString()).build();
     }
 }

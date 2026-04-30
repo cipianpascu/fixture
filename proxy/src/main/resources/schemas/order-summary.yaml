@@ -30,8 +30,18 @@ paths:
                 properties:
                   order:
                     type: object
+                    properties:
+                      id:
+                        type: string
+                      status:
+                        type: string
                   payment:
                     type: object
+                    properties:
+                      orderId:
+                        type: string
+                      paymentStatus:
+                        type: string
               example:
                 order:
                   id: "123"

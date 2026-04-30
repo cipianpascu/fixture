@@ -59,6 +59,19 @@ public abstract class BaseResource {
         return proxyService.forward(backend, requestContext, requestBody);
     }
 
+    protected Response applyResponseContract(
+        String schemaName,
+        String contractPath,
+        ProxyRequestContext requestContext,
+        Response response) {
+        return validationService.applyResponseContract(
+            schemaName,
+            requestContext.method(),
+            contractPath,
+            response
+        );
+    }
+
     protected Response backendNotFound(String backendName) {
         log.warn("Backend not found: {}", backendName);
         return Response.status(Response.Status.NOT_FOUND)

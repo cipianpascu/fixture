@@ -78,7 +78,7 @@ gateway:
     directory: classpath:schemas/
     validate-requests: true        # Enable path/method validation
     validate-bodies: true           # Enable request body validation (disable to skip body checks)
-    validate-responses: false       # Enable response validation (not implemented yet)
+    validate-responses: false       # Trim JSON responses to the schema-defined contract
     strict-mode: true               # Reject if no schema found
 
   resources:

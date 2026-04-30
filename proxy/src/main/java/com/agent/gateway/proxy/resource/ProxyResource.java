@@ -113,6 +113,7 @@ public class ProxyResource extends BaseResource {
             }
         }
 
-        return forward(backend, requestContext, requestBody);
+        Response response = forward(backend, requestContext, requestBody);
+        return applyResponseContract(backend.schema().orElse(null), path, requestContext, response);
     }
 }

@@ -48,6 +48,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.schemas.directory", "classpath:schemas/");
         config.put("gateway.schemas.validate-requests", "true");
         config.put("gateway.schemas.validate-bodies", "true");
+        config.put("gateway.schemas.validate-responses", "true");
         config.put("gateway.schemas.strict-mode", "true");
         config.put("gateway.auth.enabled", "true");
         config.put("gateway.auth.service-url", authBaseUrl);
@@ -96,7 +97,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[5].name", "cloudrun-service");
         config.put("gateway.backends[5].baseUrl", backendBaseUrl);
         config.put("gateway.backends[5].path", "/cloudrun");
-        config.put("gateway.backends[5].schema", "secondary-service.yaml");
+        config.put("gateway.backends[5].schema", "cloudrun-service.yaml");
         config.put("gateway.backends[5].enabled", "true");
         config.put("gateway.backends[5].securityType", "cloudrun");
         config.put("gateway.backends[5].securityConfig.audience", "https://orders-service-ew.a.run.app/");
@@ -144,19 +145,19 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
 
     private void registerBackendHandlers() {
         backendServer.createContext("/internal/secondary/ping", exchange ->
-            respond(exchange, 200, "{\"status\":\"secondary-ok\"}"));
+            respond(exchange, 200, "{\"status\":\"secondary-ok\",\"internal\":\"discard-me\"}"));
         backendServer.createContext("/templated/items/123", exchange ->
-            respond(exchange, 200, "{\"ok\":true}"));
+            respond(exchange, 200, "{\"ok\":true,\"debug\":true}"));
         backendServer.createContext("/jwt/ping", exchange ->
-            respond(exchange, 200, "{\"status\":\"jwt-ok\"}"));
+            respond(exchange, 200, "{\"status\":\"jwt-ok\",\"internal\":\"discard-me\"}"));
         backendServer.createContext("/cloudrun/ping", exchange ->
             respond(exchange, 200,
-                "{\"serverlessAuthorization\":\"%s\"}".formatted(
+                "{\"serverlessAuthorization\":\"%s\",\"internal\":\"discard-me\"}".formatted(
                     exchange.getRequestHeaders().getFirst("X-Serverless-Authorization"))));
         backendServer.createContext("/orders/details/123", exchange ->
-            respond(exchange, 200, "{\"id\":\"123\",\"status\":\"READY\"}"));
+            respond(exchange, 200, "{\"id\":\"123\",\"status\":\"READY\",\"internal\":\"discard-me\"}"));
         backendServer.createContext("/payments/orders/123", exchange ->
-            respond(exchange, 200, "{\"orderId\":\"123\",\"paymentStatus\":\"PAID\"}"));
+            respond(exchange, 200, "{\"orderId\":\"123\",\"paymentStatus\":\"PAID\",\"internal\":\"discard-me\"}"));
     }
 
     private void registerAuthHandlers() {

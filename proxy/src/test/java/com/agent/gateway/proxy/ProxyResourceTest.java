@@ -38,7 +38,8 @@ class ProxyResourceTest {
             .get("/api/v1/secondary-service/ping")
             .then()
             .statusCode(200)
-            .body("status", equalTo("secondary-ok"));
+            .body("status", equalTo("secondary-ok"))
+            .body("$", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasKey("internal")));
     }
 
     @Test
@@ -121,7 +122,8 @@ class ProxyResourceTest {
             .body(
                 "serverlessAuthorization",
                 equalTo("Bearer test-id-token-for:https://orders-service-ew.a.run.app/")
-            );
+            )
+            .body("$", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasKey("internal")));
     }
 
     @Test
@@ -134,7 +136,9 @@ class ProxyResourceTest {
             .body("order.id", equalTo("123"))
             .body("order.status", equalTo("READY"))
             .body("payment.orderId", equalTo("123"))
-            .body("payment.paymentStatus", equalTo("PAID"));
+            .body("payment.paymentStatus", equalTo("PAID"))
+            .body("order", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasKey("internal")))
+            .body("payment", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasKey("internal")));
     }
 
     @Test
