@@ -151,6 +151,12 @@ public class SchemaLoader {
      * Get schema by filename
      */
     public Optional<OpenAPI> getSchema(String schemaName) {
+        OpenAPI schema = schemas.get(schemaName);
+        if (schema != null) {
+            return Optional.of(schema);
+        }
+
+        loadSchemaIfMissing(schemaName);
         return Optional.ofNullable(schemas.get(schemaName));
     }
     
@@ -158,7 +164,7 @@ public class SchemaLoader {
      * Check if a schema exists
      */
     public boolean hasSchema(String schemaName) {
-        return schemas.containsKey(schemaName);
+        return getSchema(schemaName).isPresent();
     }
     
     /**
@@ -166,6 +172,25 @@ public class SchemaLoader {
      */
     public java.util.Set<String> getLoadedSchemas() {
         return schemas.keySet();
+    }
+
+    private void loadSchemaIfMissing(String schemaName) {
+        if (schemas.containsKey(schemaName)) {
+            return;
+        }
+
+        synchronized (schemas) {
+            if (schemas.containsKey(schemaName)) {
+                return;
+            }
+
+            Optional<URL> schemaUrl = resolveSchemaUrl(proxyProperties.schemas().directory(), schemaName);
+            if (schemaUrl.isPresent()) {
+                loadSchema(schemaName, schemaUrl.get());
+            } else {
+                log.warn("Schema '{}' could not be resolved on demand", schemaName);
+            }
+        }
     }
     
     /**

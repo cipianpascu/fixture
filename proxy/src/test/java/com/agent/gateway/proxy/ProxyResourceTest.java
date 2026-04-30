@@ -123,4 +123,17 @@ class ProxyResourceTest {
                 equalTo("Bearer test-id-token-for:https://orders-service-ew.a.run.app/")
             );
     }
+
+    @Test
+    void aggregatesMultipleBackendCallsBehindASingleResourceContract() {
+        given()
+            .when()
+            .get("/api/v1/order-summaries/123")
+            .then()
+            .statusCode(200)
+            .body("order.id", equalTo("123"))
+            .body("order.status", equalTo("READY"))
+            .body("payment.orderId", equalTo("123"))
+            .body("payment.paymentStatus", equalTo("PAID"));
+    }
 }

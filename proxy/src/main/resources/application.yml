@@ -78,6 +78,14 @@ gateway:
     validate-bodies: true           # Enable request body validation (disable to skip body checks)
     validate-responses: false       # Enable response validation (not implemented yet)
     strict-mode: true               # Reject if no schema found
+
+  resources:
+    order-summary:
+      schema: order-summary.yaml
+      orders-backend: orders-service
+      orders-path-template: /details/{id}
+      payments-backend: payments-service
+      payments-path-template: /orders/{id}
     
   # Backend configurations (file-based - NO database!)
   backends:
@@ -125,3 +133,17 @@ gateway:
     #   schema: public-service.yaml
     #   timeout: 30s
     #   enabled: true
+
+    # Example: Multi-backend resource dependencies
+    # - name: orders-service
+    #   baseUrl: http://localhost:9005
+    #   path: /orders
+    #   schema: orders-service.yaml
+    #   enabled: true
+    #   securityType: none
+    # - name: payments-service
+    #   baseUrl: http://localhost:9006
+    #   path: /payments
+    #   schema: payments-service.yaml
+    #   enabled: true
+    #   securityType: none

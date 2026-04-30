@@ -98,6 +98,26 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[5].securityType", "cloudrun");
         config.put("gateway.backends[5].securityConfig.audience", "https://orders-service-ew.a.run.app/");
 
+        config.put("gateway.backends[6].name", "orders-service");
+        config.put("gateway.backends[6].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[6].path", "/orders");
+        config.put("gateway.backends[6].schema", "secondary-service.yaml");
+        config.put("gateway.backends[6].enabled", "true");
+        config.put("gateway.backends[6].securityType", "none");
+
+        config.put("gateway.backends[7].name", "payments-service");
+        config.put("gateway.backends[7].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[7].path", "/payments");
+        config.put("gateway.backends[7].schema", "secondary-service.yaml");
+        config.put("gateway.backends[7].enabled", "true");
+        config.put("gateway.backends[7].securityType", "none");
+
+        config.put("gateway.resources.order-summary.schema", "order-summary.yaml");
+        config.put("gateway.resources.order-summary.orders-backend", "orders-service");
+        config.put("gateway.resources.order-summary.orders-path-template", "/details/{id}");
+        config.put("gateway.resources.order-summary.payments-backend", "payments-service");
+        config.put("gateway.resources.order-summary.payments-path-template", "/orders/{id}");
+
         return config;
     }
 
@@ -130,6 +150,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             respond(exchange, 200,
                 "{\"serverlessAuthorization\":\"%s\"}".formatted(
                     exchange.getRequestHeaders().getFirst("X-Serverless-Authorization"))));
+        backendServer.createContext("/orders/details/123", exchange ->
+            respond(exchange, 200, "{\"id\":\"123\",\"status\":\"READY\"}"));
+        backendServer.createContext("/payments/orders/123", exchange ->
+            respond(exchange, 200, "{\"orderId\":\"123\",\"paymentStatus\":\"PAID\"}"));
     }
 
     private void registerAuthHandlers() {
