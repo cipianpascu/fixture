@@ -4,9 +4,13 @@ info:
   version: 1.0.0
 
 paths:
-  /order-summaries/{id}:
+  /api/v1/order-summaries/{id}:
     get:
       operationId: getOrderSummary
+      tags:
+        - Order Summaries
+      summary: Get a combined order and payment summary
+      description: Returns an aggregated view composed from the orders and payments backends for a single order id.
       parameters:
         - name: id
           in: path
@@ -28,3 +32,12 @@ paths:
                     type: object
                   payment:
                     type: object
+              example:
+                order:
+                  id: "123"
+                  status: READY
+                payment:
+                  orderId: "123"
+                  paymentStatus: PAID
+        '400':
+          description: Request validation failed

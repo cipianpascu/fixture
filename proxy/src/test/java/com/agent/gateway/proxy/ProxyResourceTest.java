@@ -136,4 +136,20 @@ class ProxyResourceTest {
             .body("payment.orderId", equalTo("123"))
             .body("payment.paymentStatus", equalTo("PAID"));
     }
+
+    @Test
+    void decoratesConcreteResourceOperationsFromTheirContractSchemas() {
+        given()
+            .queryParam("format", "json")
+            .when()
+            .get("/q/openapi")
+            .then()
+            .statusCode(200)
+            .body("paths.'/api/v1/order-summaries/{id}'.get.summary",
+                equalTo("Get a combined order and payment summary"))
+            .body("paths.'/api/v1/order-summaries/{id}'.get.responses.'200'.description",
+                equalTo("Combined order and payment summary"))
+            .body("paths.'/api/v1/order-summaries/{id}'.get.tags[0]",
+                equalTo("Order Summaries"));
+    }
 }

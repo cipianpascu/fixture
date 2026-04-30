@@ -64,6 +64,11 @@
             <artifactId>quarkus-rest-client-reactive-jackson</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi</artifactId>
+        </dependency>
+
         <!-- Container Image (Jib) -->
         <dependency>
             <groupId>io.quarkus</groupId>

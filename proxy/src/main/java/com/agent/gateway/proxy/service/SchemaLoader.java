@@ -2,6 +2,7 @@ package com.agent.gateway.proxy.service;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.smallrye.openapi.runtime.io.OpenApiParser;
 import io.quarkus.runtime.StartupEvent;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.parser.OpenAPIV3Parser;
@@ -14,12 +15,16 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.net.URI;
 import java.net.URL;
+import java.net.JarURLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Schema Loader Service (Quarkus)
@@ -35,6 +40,7 @@ public class SchemaLoader {
     ProxyProperties proxyProperties;
     
     private final Map<String, OpenAPI> schemas = new ConcurrentHashMap<>();
+    private final Map<String, org.eclipse.microprofile.openapi.models.OpenAPI> documentationSchemas = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Map<String, com.networknt.schema.JsonSchema>>> cachedJsonSchemas = new ConcurrentHashMap<>();
     
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -50,15 +56,15 @@ public class SchemaLoader {
         log.info("Loading schemas from: {}", schemaDirectory);
 
         try {
-            List<String> schemaFiles = proxyProperties.backends().stream()
+            Set<String> schemaFiles = new LinkedHashSet<>(discoverSchemaFiles(schemaDirectory));
+            schemaFiles.addAll(proxyProperties.backends().stream()
                 .map(ProxyProperties.BackendDefinition::schema)
                 .flatMap(Optional::stream)
                 .filter(schemaName -> !schemaName.isBlank())
-                .distinct()
-                .collect(Collectors.toList());
+                .collect(Collectors.toSet()));
 
             if (schemaFiles.isEmpty()) {
-                log.info("No backend schemas configured");
+                log.info("No schemas discovered under {}", schemaDirectory);
                 return;
             }
 
@@ -113,6 +119,80 @@ public class SchemaLoader {
 
         return Optional.empty();
     }
+
+    private Set<String> discoverSchemaFiles(String schemaDirectory) {
+        Set<String> filenames = new LinkedHashSet<>();
+
+        try {
+            if (schemaDirectory.startsWith("classpath:") || schemaDirectory.startsWith("classpath*:")) {
+                String resourcePath = schemaDirectory
+                    .replace("classpath*:", "")
+                    .replace("classpath:", "");
+                if (!resourcePath.endsWith("/")) {
+                    resourcePath += "/";
+                }
+                if (resourcePath.startsWith("/")) {
+                    resourcePath = resourcePath.substring(1);
+                }
+
+                Enumeration<URL> resources = Thread.currentThread()
+                    .getContextClassLoader()
+                    .getResources(resourcePath);
+
+                while (resources.hasMoreElements()) {
+                    URL url = resources.nextElement();
+                    if ("file".equals(url.getProtocol())) {
+                        try (Stream<Path> paths = Files.list(Paths.get(url.toURI()))) {
+                            paths.filter(Files::isRegularFile)
+                                .map(path -> path.getFileName().toString())
+                                .filter(this::isSchemaFile)
+                                .forEach(filenames::add);
+                        }
+                    } else if ("jar".equals(url.getProtocol())) {
+                        JarURLConnection connection = (JarURLConnection) url.openConnection();
+                        try (JarFile jarFile = connection.getJarFile()) {
+                            String prefix = connection.getEntryName();
+                            Enumeration<JarEntry> entries = jarFile.entries();
+                            while (entries.hasMoreElements()) {
+                                JarEntry entry = entries.nextElement();
+                                String name = entry.getName();
+                                if (entry.isDirectory() || !name.startsWith(prefix) || name.equals(prefix)) {
+                                    continue;
+                                }
+                                String candidate = name.substring(prefix.length());
+                                if (!candidate.contains("/") && isSchemaFile(candidate)) {
+                                    filenames.add(candidate);
+                                }
+                            }
+                        }
+                    }
+                }
+                return filenames;
+            }
+
+            Path basePath = schemaDirectory.startsWith("file:")
+                ? Paths.get(URI.create(schemaDirectory))
+                : Paths.get(schemaDirectory);
+
+            if (Files.isDirectory(basePath)) {
+                try (Stream<Path> paths = Files.list(basePath)) {
+                    paths.filter(Files::isRegularFile)
+                        .map(path -> path.getFileName().toString())
+                        .filter(this::isSchemaFile)
+                        .forEach(filenames::add);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to enumerate schema files from {}", schemaDirectory, e);
+        }
+
+        return filenames;
+    }
+
+    private boolean isSchemaFile(String filename) {
+        String lowerCase = filename.toLowerCase(Locale.ROOT);
+        return lowerCase.endsWith(".yaml") || lowerCase.endsWith(".yml") || lowerCase.endsWith(".json");
+    }
     
     private void loadSchema(String filename, URL schemaUrl) {
         try {
@@ -130,6 +210,7 @@ public class SchemaLoader {
             if (result.getOpenAPI() != null) {
                 OpenAPI openAPI = result.getOpenAPI();
                 schemas.put(filename, openAPI);
+                documentationSchemas.put(filename, OpenApiParser.parse(schemaUrl));
                 
                 // Pre-compile JSON schemas for validation (optimization) if body validation enabled
                 if (proxyProperties.schemas().validateBodies()) {
@@ -151,13 +232,15 @@ public class SchemaLoader {
      * Get schema by filename
      */
     public Optional<OpenAPI> getSchema(String schemaName) {
-        OpenAPI schema = schemas.get(schemaName);
-        if (schema != null) {
-            return Optional.of(schema);
-        }
-
-        loadSchemaIfMissing(schemaName);
         return Optional.ofNullable(schemas.get(schemaName));
+    }
+
+    public Optional<org.eclipse.microprofile.openapi.models.OpenAPI> getDocumentationSchema(String schemaName) {
+        return Optional.ofNullable(documentationSchemas.get(schemaName));
+    }
+
+    public Map<String, org.eclipse.microprofile.openapi.models.OpenAPI> getDocumentationSchemas() {
+        return Collections.unmodifiableMap(documentationSchemas);
     }
     
     /**
@@ -174,25 +257,6 @@ public class SchemaLoader {
         return schemas.keySet();
     }
 
-    private void loadSchemaIfMissing(String schemaName) {
-        if (schemas.containsKey(schemaName)) {
-            return;
-        }
-
-        synchronized (schemas) {
-            if (schemas.containsKey(schemaName)) {
-                return;
-            }
-
-            Optional<URL> schemaUrl = resolveSchemaUrl(proxyProperties.schemas().directory(), schemaName);
-            if (schemaUrl.isPresent()) {
-                loadSchema(schemaName, schemaUrl.get());
-            } else {
-                log.warn("Schema '{}' could not be resolved on demand", schemaName);
-            }
-        }
-    }
-    
     /**
      * Get pre-compiled JSON schema for validation (cached at load time)
      * 

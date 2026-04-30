@@ -39,7 +39,7 @@ public class OrderSummaryResource extends BaseResource {
         @Context HttpHeaders httpHeaders,
         @Context ContainerRequestContext requestContext) {
         ProxyRequestContext incomingRequest = toRequestContext(uriInfo, httpHeaders, requestContext);
-        String contractPath = extractContractPath(incomingRequest.requestUri(), "/api/v1");
+        String contractPath = incomingRequest.requestUri();
 
         if (proxyProperties.schemas().validateRequests()) {
             ValidationResult validation = validateContract(resourceConfig.schema(), contractPath, incomingRequest, null);

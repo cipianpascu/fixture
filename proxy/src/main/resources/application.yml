@@ -12,6 +12,8 @@ quarkus:
         level: DEBUG
     console:
       format: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"
+  smallrye-openapi:
+    always-run-filter: true
   
   # Health and Metrics
   smallrye-health:
