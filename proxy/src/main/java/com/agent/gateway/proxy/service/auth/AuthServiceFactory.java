@@ -11,7 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.rest.client.RestClientBuilder;
 
 import java.net.URI;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.Map;
 
@@ -95,15 +94,21 @@ public class AuthServiceFactory {
     }
     
     /**
-     * Create JWT auth service with backend-specific scopes
+     * Create JWT auth service with backend-specific auth request
      */
     private AuthService createJwtAuthService(ProxyProperties.BackendDefinition backend) {
-        log.debug("Creating JWT auth service for backend: {} with scopes: {}", 
-            backend.name(), backend.authScopes().orElse(List.of()));
+        ProxyProperties.AuthRequestConfig authRequestConfig = backend.authRequest()
+            .orElseThrow(() -> new ProxyConfigurationException(
+                "JWT auth configured but auth-request missing for backend '%s'".formatted(backend.name())));
+        log.debug("Creating JWT auth service for backend: {} with auth-request: sparteGvo={}, btx={}, pss={}",
+            backend.name(),
+            authRequestConfig.sparteGvo(),
+            authRequestConfig.btx(),
+            authRequestConfig.pss());
         return new JwtAuthService(
             proxyProperties, 
             getAuthClient(),  // Use lazy-initialized client
-            backend.authScopes().orElse(List.of())
+            authRequestConfig
         );
     }
     

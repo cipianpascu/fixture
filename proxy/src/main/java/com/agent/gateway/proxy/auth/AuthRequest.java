@@ -10,5 +10,7 @@ import java.util.List;
 @AllArgsConstructor
 @NoArgsConstructor
 public class AuthRequest {
-    private List<String> scopes;
+    private List<String> sparteGvo;
+    private List<String> btx;
+    private List<String> pss;
 }

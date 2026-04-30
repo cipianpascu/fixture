@@ -3,12 +3,11 @@ package com.agent.gateway.proxy.service.auth;
 import com.agent.gateway.proxy.auth.AuthTokens;
 import com.agent.gateway.proxy.client.AuthClient;
 import com.agent.gateway.proxy.config.ProxyProperties;
-import com.agent.gateway.proxy.exception.AuthenticationRequiredException;
 import com.agent.gateway.proxy.exception.AuthServiceException;
+import com.agent.gateway.proxy.exception.AuthenticationRequiredException;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -20,12 +19,15 @@ public class JwtAuthService implements AuthService {
     
     private final ProxyProperties proxyProperties;
     private final AuthClient authClient;
-    private final List<String> scopes;
+    private final ProxyProperties.AuthRequestConfig authRequestConfig;
     
-    public JwtAuthService(ProxyProperties proxyProperties, AuthClient authClient, List<String> scopes) {
+    public JwtAuthService(
+        ProxyProperties proxyProperties,
+        AuthClient authClient,
+        ProxyProperties.AuthRequestConfig authRequestConfig) {
         this.proxyProperties = proxyProperties;
         this.authClient = authClient;
-        this.scopes = scopes != null ? scopes : List.of();
+        this.authRequestConfig = authRequestConfig;
     }
     
     @Override
@@ -42,18 +44,31 @@ public class JwtAuthService implements AuthService {
                 "Missing session identifier for JWT-authenticated backend");
         }
         
-        log.debug("Found sessionId: {}, requesting scopes: {}", sessionId.get(), scopes);
+        log.debug(
+            "Found sessionId: {}, requesting sparteGvo={}, btx={}, pss={}",
+            sessionId.get(),
+            authRequestConfig.sparteGvo(),
+            authRequestConfig.btx(),
+            authRequestConfig.pss()
+        );
         
         // Call auth service to get tokens
-        Optional<AuthTokens> authTokens = retrieveTokens(sessionId.get(), scopes);
+        Optional<AuthTokens> authTokens = retrieveTokens(sessionId.get());
         
         if (authTokens.isPresent()) {
             AuthTokens tokens = authTokens.get();
-            if (tokens.getServiceToken() != null) {
-                headers.put("X-Service-Token", tokens.getServiceToken());
+            if (tokens.getGlueToken() != null) {
+                headers.put("X-Glue-Token", tokens.getGlueToken());
             }
-            if (tokens.getUserGrantsToken() != null) {
-                headers.put("X-User-Grants-Token", tokens.getUserGrantsToken());
+            if (tokens.getAuthZToken() != null) {
+                headers.put("X-Auth-Z-Token", tokens.getAuthZToken());
+            }
+            if (tokens.getCustomerAccessToken() != null) {
+                headers.put("X-Customer-Access-Token", tokens.getCustomerAccessToken());
+            }
+            if (tokens.getDisallowedPss() != null && !tokens.getDisallowedPss().isEmpty()) {
+                throw new AuthServiceException(
+                    "Auth service disallowed requested pss: " + tokens.getDisallowedPss());
             }
             log.debug("Attached JWT auth tokens to request");
             return;
@@ -86,19 +101,30 @@ public class JwtAuthService implements AuthService {
     /**
      * Retrieve tokens from auth service with scopes
      */
-    private Optional<AuthTokens> retrieveTokens(String sessionId, List<String> scopes) {
+    private Optional<AuthTokens> retrieveTokens(String sessionId) {
         try {
             // Call auth service using REST client
-            // URL is configured via quarkus.rest-client.auth-service.url
-            log.debug("Calling auth service with sessionId: {} and scopes: {}", sessionId, scopes);
+            log.debug(
+                "Calling auth service with sessionId: {} and sparteGvo={}, btx={}, pss={}",
+                sessionId,
+                authRequestConfig.sparteGvo(),
+                authRequestConfig.btx(),
+                authRequestConfig.pss()
+            );
             
             com.agent.gateway.proxy.auth.AuthRequest authRequest = 
-                new com.agent.gateway.proxy.auth.AuthRequest(scopes);
+                new com.agent.gateway.proxy.auth.AuthRequest(
+                    authRequestConfig.sparteGvo(),
+                    authRequestConfig.btx(),
+                    authRequestConfig.pss()
+                );
             
             AuthTokens tokens = authClient.getTokens(sessionId, authRequest);
             
             if (tokens != null) {
-                if (tokens.getServiceToken() == null && tokens.getUserGrantsToken() == null) {
+                if (tokens.getGlueToken() == null &&
+                    tokens.getAuthZToken() == null &&
+                    tokens.getCustomerAccessToken() == null) {
                     throw new AuthServiceException("Auth service returned an empty token payload");
                 }
                 log.debug("Retrieved auth tokens successfully");

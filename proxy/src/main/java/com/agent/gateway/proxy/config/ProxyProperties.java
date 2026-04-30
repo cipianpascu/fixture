@@ -22,9 +22,6 @@ public interface ProxyProperties {
     @WithName("auth")
     AuthConfig auth();
 
-    @WithName("resources")
-    Optional<ResourceConfig> resources();
-
     @WithName("tls")
     Optional<TlsConfig> tls();
     
@@ -81,30 +78,13 @@ public interface ProxyProperties {
         boolean strictMode();
     }
 
-    interface ResourceConfig {
-        @WithName("order-summary")
-        Optional<OrderSummaryResourceConfig> orderSummary();
-    }
+    interface AuthRequestConfig {
+        @WithName("sparte-gvo")
+        List<String> sparteGvo();
 
-    interface OrderSummaryResourceConfig {
-        @WithDefault("order-summary.yaml")
-        String schema();
+        List<String> btx();
 
-        @WithName("orders-backend")
-        @WithDefault("orders-service")
-        String ordersBackend();
-
-        @WithName("orders-path-template")
-        @WithDefault("/details/{id}")
-        String ordersPathTemplate();
-
-        @WithName("payments-backend")
-        @WithDefault("payments-service")
-        String paymentsBackend();
-
-        @WithName("payments-path-template")
-        @WithDefault("/orders/{id}")
-        String paymentsPathTemplate();
+        List<String> pss();
     }
     
     interface BackendDefinition {
@@ -128,9 +108,9 @@ public interface ProxyProperties {
         
         @WithName("securityConfig")
         Map<String, String> securityConfig();
-        
-        @WithName("authScopes")
-        Optional<List<String>> authScopes();
+
+        @WithName("auth-request")
+        Optional<AuthRequestConfig> authRequest();
 
         @WithName("tls-profile")
         Optional<String> tlsProfile();

@@ -1,11 +1,13 @@
 package com.agent.gateway.proxy.resource;
 
+import com.agent.gateway.proxy.config.OrderSummaryResourceConfig;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.validation.ValidationResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -26,6 +28,9 @@ public class OrderSummaryResource extends BaseResource {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @Inject
+    OrderSummaryResourceConfig resourceConfig;
+
     @GET
     @Path("/{id}")
     public Response getOrderSummary(
@@ -33,9 +38,6 @@ public class OrderSummaryResource extends BaseResource {
         @Context UriInfo uriInfo,
         @Context HttpHeaders httpHeaders,
         @Context ContainerRequestContext requestContext) {
-        ProxyProperties.OrderSummaryResourceConfig resourceConfig = proxyProperties.resources()
-            .flatMap(ProxyProperties.ResourceConfig::orderSummary)
-            .orElseThrow(() -> new IllegalStateException("Order summary resource config is not available"));
         ProxyRequestContext incomingRequest = toRequestContext(uriInfo, httpHeaders, requestContext);
         String contractPath = extractContractPath(incomingRequest.requestUri(), "/api/v1");
 

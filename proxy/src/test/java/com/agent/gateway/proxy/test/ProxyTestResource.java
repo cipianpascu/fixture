@@ -1,5 +1,7 @@
 package com.agent.gateway.proxy.test;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
@@ -13,6 +15,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private HttpServer backendServer;
     private HttpServer authServer;
@@ -56,7 +60,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[0].schema", "secondary-service.yaml");
         config.put("gateway.backends[0].enabled", "true");
         config.put("gateway.backends[0].securityType", "none");
-        config.put("gateway.backends[0].authScopes", "");
 
         config.put("gateway.backends[1].name", "templated-service");
         config.put("gateway.backends[1].baseUrl", backendBaseUrl);
@@ -64,7 +67,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[1].schema", "templated-service.yaml");
         config.put("gateway.backends[1].enabled", "true");
         config.put("gateway.backends[1].securityType", "none");
-        config.put("gateway.backends[1].authScopes", "");
 
         config.put("gateway.backends[2].name", "unsupported-auth-service");
         config.put("gateway.backends[2].baseUrl", backendBaseUrl);
@@ -72,7 +74,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[2].schema", "secondary-service.yaml");
         config.put("gateway.backends[2].enabled", "true");
         config.put("gateway.backends[2].securityType", "oauth2");
-        config.put("gateway.backends[2].authScopes", "");
 
         config.put("gateway.backends[3].name", "misconfigured-basic-service");
         config.put("gateway.backends[3].baseUrl", backendBaseUrl);
@@ -80,7 +81,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[3].schema", "secondary-service.yaml");
         config.put("gateway.backends[3].enabled", "true");
         config.put("gateway.backends[3].securityType", "basic");
-        config.put("gateway.backends[3].authScopes", "");
 
         config.put("gateway.backends[4].name", "jwt-service");
         config.put("gateway.backends[4].baseUrl", backendBaseUrl);
@@ -88,7 +88,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[4].schema", "secondary-service.yaml");
         config.put("gateway.backends[4].enabled", "true");
         config.put("gateway.backends[4].securityType", "jwt");
-        config.put("gateway.backends[4].authScopes[0]", "read:users");
+        config.put("gateway.backends[4].auth-request.sparte-gvo[0]", "a");
+        config.put("gateway.backends[4].auth-request.sparte-gvo[1]", "b");
+        config.put("gateway.backends[4].auth-request.btx[0]", "FirstFunction");
+        config.put("gateway.backends[4].auth-request.pss[0]", "SecondFunction");
 
         config.put("gateway.backends[5].name", "cloudrun-service");
         config.put("gateway.backends[5].baseUrl", backendBaseUrl);
@@ -158,15 +161,21 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
 
     private void registerAuthHandlers() {
         authServer.createContext("/auth/tokens", exchange -> {
-            String sessionId = exchange.getRequestHeaders().getFirst("X-Session-Id");
+            String sessionId = exchange.getRequestURI().getPath().substring("/auth/tokens/".length());
             String serverlessAuthorization = exchange.getRequestHeaders().getFirst("X-Serverless-Authorization");
+            JsonNode requestBody = OBJECT_MAPPER.readTree(exchange.getRequestBody());
+            assertAuthRequestShape(requestBody);
             if ("retry-session".equals(sessionId)) {
                 int callNumber = RETRY_SESSION_CALLS.incrementAndGet();
                 if (callNumber == 1) {
                     respond(exchange, 503, "{\"error\":\"temporary auth outage\"}");
                     return;
                 }
-                respond(exchange, 200, "{\"serviceToken\":\"svc-token\",\"userGrantsToken\":\"usr-token\"}");
+                respond(
+                    exchange,
+                    200,
+                    "{\"glue_token\":\"glue-token\",\"auth_z_token\":\"authz-token\",\"customer_access_token\":\"customer-token\",\"disallowed_pss\":[]}"
+                );
                 return;
             }
 
@@ -176,12 +185,28 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
                     respond(exchange, 401, "{\"error\":\"missing cloud run auth\"}");
                     return;
                 }
-                respond(exchange, 200, "{\"serviceToken\":\"svc-token\",\"userGrantsToken\":\"usr-token\"}");
+                respond(
+                    exchange,
+                    200,
+                    "{\"glue_token\":\"glue-token\",\"auth_z_token\":\"authz-token\",\"customer_access_token\":\"customer-token\",\"disallowed_pss\":[]}"
+                );
                 return;
             }
 
-            respond(exchange, 200, "{\"serviceToken\":\"svc-token\",\"userGrantsToken\":\"usr-token\"}");
+            respond(
+                exchange,
+                200,
+                "{\"glue_token\":\"glue-token\",\"auth_z_token\":\"authz-token\",\"customer_access_token\":\"customer-token\",\"disallowed_pss\":[]}"
+            );
         });
+    }
+
+    private static void assertAuthRequestShape(JsonNode requestBody) {
+        if (!requestBody.path("sparteGvo").isArray() ||
+            !requestBody.path("btx").isArray() ||
+            !requestBody.path("pss").isArray()) {
+            throw new IllegalStateException("Auth request does not match expected JSON shape: " + requestBody);
+        }
     }
 
     private static void respond(HttpExchange exchange, int statusCode, String body) throws IOException {

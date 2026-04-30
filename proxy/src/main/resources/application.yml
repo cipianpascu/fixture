@@ -98,9 +98,14 @@ gateway:
       enabled: true
       securityType: jwt
       # tls-profile: internal-ca
-      authScopes:
-        - read:users
-        - write:users
+      auth-request:
+        sparte-gvo:
+          - a
+          - b
+        btx:
+          - FirstFunction
+        pss:
+          - SecondFunction
       
     # Example: Basic authentication
     # - name: legacy-service

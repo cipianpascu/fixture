@@ -138,11 +138,6 @@ class TlsContextFactoryTest {
             }
 
             @Override
-            public Optional<ResourceConfig> resources() {
-                return Optional.empty();
-            }
-
-            @Override
             public Optional<TlsConfig> tls() {
                 return Optional.of(() -> profiles);
             }
@@ -197,7 +192,7 @@ class TlsContextFactoryTest {
             }
 
             @Override
-            public Optional<List<String>> authScopes() {
+            public Optional<ProxyProperties.AuthRequestConfig> authRequest() {
                 return Optional.empty();
             }
 
