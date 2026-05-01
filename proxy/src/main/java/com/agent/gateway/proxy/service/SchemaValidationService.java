@@ -21,6 +21,9 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import com.agent.gateway.proxy.model.ProxyRequestContext;
 
 /**
  * Schema Validation Service (OPTIMIZED - Quarkus)
@@ -31,6 +34,8 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 @Slf4j
 public class SchemaValidationService {
+    private record ParameterKey(String name, String location) {
+    }
 
     private record PathMatch(String schemaPath, PathItem pathItem) {
     }
@@ -42,16 +47,18 @@ public class SchemaValidationService {
     ProxyProperties proxyProperties;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final com.networknt.schema.JsonSchemaFactory schemaFactory =
+        com.networknt.schema.JsonSchemaFactory.getInstance(com.networknt.schema.SpecVersion.VersionFlag.V7);
     
     /**
      * Validate an incoming request against its schema
      */
     public ValidationResult validateRequest(
             String schemaName, 
-            String method, 
             String path,
+            ProxyRequestContext requestContext,
             String requestBody,
-            Map<String, String> headers) {
+            String method) {
         
         // If no schema name provided
         if (schemaName == null || schemaName.isEmpty()) {
@@ -89,6 +96,17 @@ public class SchemaValidationService {
                 String.format("Method %s not allowed for path %s in schema %s", 
                     method, path, schemaName));
         }
+
+        ValidationResult parameterValidation = validateParameters(
+            schema,
+            pathMatch,
+            operation,
+            path,
+            requestContext
+        );
+        if (!parameterValidation.isValid()) {
+            return parameterValidation;
+        }
         
         // Validate request body if enabled and present (OPTIMIZED - uses cached schema)
         if (proxyProperties.schemas().validateBodies() && 
@@ -102,6 +120,94 @@ public class SchemaValidationService {
         
         log.debug("Request validated successfully: {} {} against {}", method, path, schemaName);
         return ValidationResult.allowed();
+    }
+
+    private ValidationResult validateParameters(
+        OpenAPI schema,
+        PathMatch pathMatch,
+        Operation operation,
+        String requestPath,
+        ProxyRequestContext requestContext) {
+
+        Map<ParameterKey, io.swagger.v3.oas.models.parameters.Parameter> parameters = new LinkedHashMap<>();
+        if (pathMatch.pathItem().getParameters() != null) {
+            pathMatch.pathItem().getParameters().forEach(parameter ->
+                parameters.put(new ParameterKey(parameter.getName(), parameter.getIn()), parameter));
+        }
+        if (operation.getParameters() != null) {
+            operation.getParameters().forEach(parameter ->
+                parameters.put(new ParameterKey(parameter.getName(), parameter.getIn()), parameter));
+        }
+
+        if (parameters.isEmpty()) {
+            return ValidationResult.allowed();
+        }
+
+        Map<String, String> pathParameters = extractPathParameters(pathMatch.schemaPath(), requestPath);
+        Map<String, List<String>> queryParameters = parseQueryParameters(requestContext.queryString());
+
+        List<String> errors = new ArrayList<>();
+        for (io.swagger.v3.oas.models.parameters.Parameter parameter : parameters.values()) {
+            List<String> rawValues = switch (parameter.getIn()) {
+                case "path" -> optionalList(pathParameters.get(parameter.getName()));
+                case "query" -> queryParameters.getOrDefault(parameter.getName(), List.of());
+                case "header" -> optionalList(findHeader(requestContext.headers(), parameter.getName()));
+                case "cookie" -> optionalList(requestContext.cookie(parameter.getName()));
+                default -> List.of();
+            };
+
+            if ((rawValues == null || rawValues.isEmpty() || rawValues.stream().allMatch(String::isBlank))
+                && Boolean.TRUE.equals(parameter.getRequired())) {
+                errors.add("Required %s parameter '%s' is missing".formatted(parameter.getIn(), parameter.getName()));
+                continue;
+            }
+
+            if (rawValues == null || rawValues.isEmpty()) {
+                continue;
+            }
+
+            io.swagger.v3.oas.models.media.Schema<?> parameterSchema = parameter.getSchema();
+            if (parameterSchema == null && parameter.getContent() != null) {
+                io.swagger.v3.oas.models.media.MediaType mediaType = parameter.getContent().get("application/json");
+                if (mediaType == null) {
+                    mediaType = parameter.getContent().get("*/*");
+                }
+                if (mediaType != null) {
+                    parameterSchema = mediaType.getSchema();
+                }
+            }
+
+            if (parameterSchema == null) {
+                continue;
+            }
+
+            try {
+                JsonNode parameterValue = toParameterJson(
+                    rawValues,
+                    parameterSchema,
+                    parameter.getStyle(),
+                    parameter.getExplode(),
+                    schema
+                );
+                JsonSchema jsonSchema = schemaFactory.getSchema(convertParameterSchema(parameterSchema, schema));
+                Set<ValidationMessage> validationMessages = jsonSchema.validate(parameterValue);
+                validationMessages.stream()
+                    .map(ValidationMessage::getMessage)
+                    .map(message -> "%s parameter '%s' %s".formatted(parameter.getIn(), parameter.getName(), message))
+                    .forEach(errors::add);
+            } catch (IllegalArgumentException e) {
+                errors.add("%s parameter '%s' %s".formatted(
+                    parameter.getIn(),
+                    parameter.getName(),
+                    e.getMessage()
+                ));
+            } catch (Exception e) {
+                log.warn("Failed to validate {} parameter '{}'", parameter.getIn(), parameter.getName(), e);
+                errors.add("Failed to validate %s parameter '%s'".formatted(parameter.getIn(), parameter.getName()));
+            }
+        }
+
+        return errors.isEmpty() ? ValidationResult.allowed() : ValidationResult.rejected(errors);
     }
 
     public Response applyResponseContract(
@@ -209,6 +315,201 @@ public class SchemaValidationService {
             // Be lenient on validation errors - allow the request
             return ValidationResult.allowed();
         }
+    }
+
+    private Map<String, String> extractPathParameters(String schemaPath, String requestPath) {
+        String[] schemaParts = schemaPath.split("/");
+        String[] requestParts = requestPath.split("/");
+        Map<String, String> pathParameters = new HashMap<>();
+
+        for (int i = 0; i < Math.min(schemaParts.length, requestParts.length); i++) {
+            String schemaPart = schemaParts[i];
+            if (schemaPart.startsWith("{") && schemaPart.endsWith("}")) {
+                pathParameters.put(schemaPart.substring(1, schemaPart.length() - 1), requestParts[i]);
+            }
+        }
+
+        return pathParameters;
+    }
+
+    private Map<String, List<String>> parseQueryParameters(String rawQuery) {
+        if (rawQuery == null || rawQuery.isBlank()) {
+            return Map.of();
+        }
+
+        Map<String, List<String>> queryParameters = new LinkedHashMap<>();
+        for (String pair : rawQuery.split("&")) {
+            if (pair.isBlank()) {
+                continue;
+            }
+            String[] parts = pair.split("=", 2);
+            String name = decode(parts[0]);
+            String value = parts.length > 1 ? decode(parts[1]) : "";
+            queryParameters.computeIfAbsent(name, ignored -> new ArrayList<>()).add(value);
+        }
+        return queryParameters;
+    }
+
+    private String decode(String value) {
+        return URLDecoder.decode(value, StandardCharsets.UTF_8);
+    }
+
+    private String findHeader(Map<String, String> headers, String name) {
+        if (headers.containsKey(name)) {
+            return headers.get(name);
+        }
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(name)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private List<String> optionalList(String value) {
+        return value == null ? List.of() : List.of(value);
+    }
+
+    private JsonNode toParameterJson(
+        List<String> rawValues,
+        io.swagger.v3.oas.models.media.Schema<?> schema,
+        io.swagger.v3.oas.models.parameters.Parameter.StyleEnum style,
+        Boolean explode,
+        OpenAPI openAPI) {
+
+        io.swagger.v3.oas.models.media.Schema<?> resolvedSchema = resolveSchema(schema, openAPI);
+        String type = resolvedSchema != null ? resolvedSchema.getType() : schema.getType();
+
+        if ("array".equals(type)) {
+            ArrayNode arrayNode = objectMapper.createArrayNode();
+            List<String> values = rawValues;
+            if (rawValues.size() == 1 && (style == null || style == io.swagger.v3.oas.models.parameters.Parameter.StyleEnum.FORM)
+                && !Boolean.TRUE.equals(explode)) {
+                values = Arrays.asList(rawValues.get(0).split(","));
+            }
+            io.swagger.v3.oas.models.media.Schema<?> itemSchema = resolvedSchema != null ? resolvedSchema.getItems() : schema.getItems();
+            for (String value : values) {
+                arrayNode.add(toScalarJson(value, itemSchema));
+            }
+            return arrayNode;
+        }
+
+        return toScalarJson(rawValues.get(0), resolvedSchema != null ? resolvedSchema : schema);
+    }
+
+    private JsonNode toScalarJson(String rawValue, io.swagger.v3.oas.models.media.Schema<?> schema) {
+        if (schema == null || schema.getType() == null) {
+            return objectMapper.valueToTree(rawValue);
+        }
+
+        return switch (schema.getType()) {
+            case "integer" -> objectMapper.valueToTree(parseInteger(rawValue));
+            case "number" -> objectMapper.valueToTree(parseNumber(rawValue));
+            case "boolean" -> objectMapper.valueToTree(parseBoolean(rawValue));
+            default -> objectMapper.valueToTree(rawValue);
+        };
+    }
+
+    private long parseInteger(String rawValue) {
+        try {
+            return Long.parseLong(rawValue);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("must be a valid integer");
+        }
+    }
+
+    private double parseNumber(String rawValue) {
+        try {
+            return Double.parseDouble(rawValue);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("must be a valid number");
+        }
+    }
+
+    private boolean parseBoolean(String rawValue) {
+        if ("true".equalsIgnoreCase(rawValue)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(rawValue)) {
+            return false;
+        }
+        throw new IllegalArgumentException("must be a valid boolean");
+    }
+
+    private JsonNode convertParameterSchema(
+        io.swagger.v3.oas.models.media.Schema<?> schema,
+        OpenAPI openAPI) throws Exception {
+        return convertToJsonSchema(resolveSchema(schema, openAPI), openAPI);
+    }
+
+    private JsonNode convertToJsonSchema(
+        io.swagger.v3.oas.models.media.Schema<?> schema,
+        OpenAPI openAPI) throws Exception {
+
+        if (schema == null) {
+            return objectMapper.createObjectNode();
+        }
+
+        Map<String, Object> jsonSchema = new HashMap<>();
+        jsonSchema.put("$schema", "http://json-schema.org/draft-07/schema#");
+
+        if (schema.getType() != null) {
+            jsonSchema.put("type", schema.getType());
+        }
+        if (schema.getFormat() != null) {
+            jsonSchema.put("format", schema.getFormat());
+        }
+        if (schema.getEnum() != null) {
+            jsonSchema.put("enum", schema.getEnum());
+        }
+        if (schema.getPattern() != null) {
+            jsonSchema.put("pattern", schema.getPattern());
+        }
+        if (schema.getMinimum() != null) {
+            jsonSchema.put("minimum", schema.getMinimum());
+        }
+        if (schema.getMaximum() != null) {
+            jsonSchema.put("maximum", schema.getMaximum());
+        }
+        if (schema.getExclusiveMinimum() != null) {
+            jsonSchema.put("exclusiveMinimum", schema.getExclusiveMinimum());
+        }
+        if (schema.getExclusiveMaximum() != null) {
+            jsonSchema.put("exclusiveMaximum", schema.getExclusiveMaximum());
+        }
+        if (schema.getMinLength() != null) {
+            jsonSchema.put("minLength", schema.getMinLength());
+        }
+        if (schema.getMaxLength() != null) {
+            jsonSchema.put("maxLength", schema.getMaxLength());
+        }
+        if (schema.getMinItems() != null) {
+            jsonSchema.put("minItems", schema.getMinItems());
+        }
+        if (schema.getMaxItems() != null) {
+            jsonSchema.put("maxItems", schema.getMaxItems());
+        }
+        if (schema.getProperties() != null && !schema.getProperties().isEmpty()) {
+            Map<String, Object> properties = new HashMap<>();
+            for (Map.Entry<String, io.swagger.v3.oas.models.media.Schema> entry : schema.getProperties().entrySet()) {
+                properties.put(entry.getKey(), objectMapper.convertValue(
+                    convertToJsonSchema(resolveSchema(entry.getValue(), openAPI), openAPI),
+                    Map.class
+                ));
+            }
+            jsonSchema.put("properties", properties);
+        }
+        if (schema.getRequired() != null && !schema.getRequired().isEmpty()) {
+            jsonSchema.put("required", schema.getRequired());
+        }
+        if (schema.getItems() != null) {
+            jsonSchema.put("items", objectMapper.convertValue(
+                convertToJsonSchema(resolveSchema(schema.getItems(), openAPI), openAPI),
+                Map.class
+            ));
+        }
+
+        return objectMapper.valueToTree(jsonSchema);
     }
     
     /**
@@ -360,6 +661,9 @@ public class SchemaValidationService {
         io.swagger.v3.oas.models.media.Schema<?> schema,
         OpenAPI openAPI) {
 
+        if (schema == null) {
+            return null;
+        }
         if (schema.get$ref() == null) {
             return schema;
         }

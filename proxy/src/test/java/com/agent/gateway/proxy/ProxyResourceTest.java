@@ -56,6 +56,67 @@ class ProxyResourceTest {
     }
 
     @Test
+    void validatesPathParametersAgainstTheirDeclaredSchema() {
+        given()
+            .contentType(ContentType.JSON)
+            .body("{\"name\":\"valid\"}")
+            .when()
+            .put("/api/v1/templated-service/items/not-a-number")
+            .then()
+            .statusCode(400)
+            .body("error", equalTo("Request validation failed"))
+            .body("details.toString()", containsString("path parameter 'id'"));
+    }
+
+    @Test
+    void validatesQueryHeaderAndCookieParametersAgainstTheirDeclaredSchema() {
+        given()
+            .queryParam("limit", "100")
+            .header("X-Tenant", "tenant-acme")
+            .cookie("mode", "full")
+            .when()
+            .get("/api/v1/parameter-service/search/123")
+            .then()
+            .statusCode(400)
+            .body("error", equalTo("Request validation failed"))
+            .body("details.toString()", containsString("query parameter 'limit'"));
+
+        given()
+            .queryParam("limit", "10")
+            .header("X-Tenant", "wrong")
+            .cookie("mode", "full")
+            .when()
+            .get("/api/v1/parameter-service/search/123")
+            .then()
+            .statusCode(400)
+            .body("details.toString()", containsString("header parameter 'X-Tenant'"));
+
+        given()
+            .queryParam("limit", "10")
+            .header("X-Tenant", "tenant-acme")
+            .cookie("mode", "broken")
+            .when()
+            .get("/api/v1/parameter-service/search/123")
+            .then()
+            .statusCode(400)
+            .body("details.toString()", containsString("cookie parameter 'mode'"));
+    }
+
+    @Test
+    void allowsRequestsWhenAllDeclaredParametersAreValid() {
+        given()
+            .queryParam("limit", "10")
+            .header("X-Tenant", "tenant-acme")
+            .cookie("mode", "full")
+            .when()
+            .get("/api/v1/parameter-service/search/123")
+            .then()
+            .statusCode(200)
+            .body("ok", equalTo(true))
+            .body("$", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasKey("debug")));
+    }
+
+    @Test
     void rejectsUnsupportedAuthTypes() {
         given()
             .when()

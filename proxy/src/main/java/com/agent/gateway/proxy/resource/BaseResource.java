@@ -45,10 +45,10 @@ public abstract class BaseResource {
         String requestBody) {
         return validationService.validateRequest(
             schemaName,
-            requestContext.method(),
             contractPath,
+            requestContext,
             requestBody,
-            requestContext.headers()
+            requestContext.method()
         );
     }
 

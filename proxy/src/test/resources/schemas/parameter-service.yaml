@@ -1,0 +1,45 @@
+openapi: 3.0.0
+info:
+  title: Parameter Service API
+  version: 1.0.0
+
+paths:
+  /search/{id}:
+    get:
+      operationId: searchById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          required: true
+          schema:
+            type: integer
+            maximum: 50
+        - name: X-Tenant
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: "^tenant-[a-z]+$"
+        - name: mode
+          in: cookie
+          required: true
+          schema:
+            type: string
+            enum:
+              - full
+              - slim
+      responses:
+        '200':
+          description: search ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
