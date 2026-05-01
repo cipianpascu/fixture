@@ -1,7 +1,8 @@
-package com.agent.gateway.proxy.resource;
+package com.agent.gateway.proxy.app.resource;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
+import com.agent.gateway.proxy.resource.BaseResource;
 import com.agent.gateway.proxy.validation.ValidationResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.*;

@@ -2,6 +2,10 @@
 quarkus:
   application:
     name: backend-gateway-proxy
+  index-dependency:
+    bfa-library:
+      group-id: com.agent
+      artifact-id: bfa-library
   http:
     host: 0.0.0.0
     port: ${PORT:8080}

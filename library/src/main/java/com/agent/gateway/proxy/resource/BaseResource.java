@@ -19,13 +19,13 @@ import java.util.Map;
 public abstract class BaseResource {
 
     @Inject
-    SchemaValidationService validationService;
+    protected SchemaValidationService validationService;
 
     @Inject
-    ProxyProperties proxyProperties;
+    protected ProxyProperties proxyProperties;
 
     @Inject
-    ProxyService proxyService;
+    protected ProxyService proxyService;
 
     protected ProxyProperties.BackendDefinition findBackend(String name) {
         return proxyProperties.backends().stream()

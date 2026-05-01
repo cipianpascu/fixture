@@ -1,4 +1,4 @@
-package com.agent.gateway.proxy.config;
+package com.agent.gateway.proxy.app.config;
 
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;

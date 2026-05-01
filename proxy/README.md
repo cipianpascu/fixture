@@ -24,11 +24,9 @@ This module is file-configured only. There is no database and no admin API.
 
 Main implementation points:
 
-- Routing entrypoint: [src/main/java/com/agent/gateway/proxy/resource/ProxyResource.java](./src/main/java/com/agent/gateway/proxy/resource/ProxyResource.java)
-- Forwarding: [src/main/java/com/agent/gateway/proxy/service/ProxyService.java](./src/main/java/com/agent/gateway/proxy/service/ProxyService.java)
-- Schema loading: [src/main/java/com/agent/gateway/proxy/service/SchemaLoader.java](./src/main/java/com/agent/gateway/proxy/service/SchemaLoader.java)
-- Request validation: [src/main/java/com/agent/gateway/proxy/service/SchemaValidationService.java](./src/main/java/com/agent/gateway/proxy/service/SchemaValidationService.java)
-- Config mapping: [src/main/java/com/agent/gateway/proxy/config/ProxyProperties.java](./src/main/java/com/agent/gateway/proxy/config/ProxyProperties.java)
+- Routing entrypoint: [src/main/java/com/agent/gateway/proxy/app/resource/ProxyResource.java](./src/main/java/com/agent/gateway/proxy/app/resource/ProxyResource.java)
+- App-specific orchestration example: [src/main/java/com/agent/gateway/proxy/app/resource/OrderSummaryResource.java](./src/main/java/com/agent/gateway/proxy/app/resource/OrderSummaryResource.java)
+- Shared forwarding, validation, auth, TLS, and OpenAPI support now live in the `bfa-library` module
 
 ## Auth Modes
 
@@ -36,7 +34,7 @@ Per backend, `securityType` can be:
 
 - `none`: no auth enrichment
 - `basic`: injects HTTP Basic credentials from `securityConfig.username/password`
-- `jwt`: calls the configured auth service and forwards returned tokens as `X-Service-Token` and `X-User-Grants-Token`
+- `jwt`: calls the configured auth service and forwards returned tokens as `X-Glue-Token`, `X-Auth-Z-Token`, and `X-Customer-Access-Token`
 - `cloudrun`: generates a Google ID token and sends it as `X-Serverless-Authorization`
 
 Auth-service calls are configured separately under `gateway.auth`. The auth service itself can also use Cloud Run IAM auth with:
@@ -89,8 +87,14 @@ gateway:
       schema: example-service.yaml
       enabled: true
       securityType: jwt
-      authScopes:
-        - read:users
+      auth-request:
+        sparte-gvo:
+          - a
+          - b
+        btx:
+          - FirstFunction
+        pss:
+          - SecondFunction
 ```
 
 ### Backend Fields
@@ -103,7 +107,7 @@ gateway:
 - `enabled`: whether the backend is routable
 - `securityType`: `none`, `basic`, `jwt`, or `cloudrun`
 - `securityConfig`: auth-specific key/value config
-- `authScopes`: scopes requested from the auth service for `jwt`
+- `auth-request`: structured request payload sent to the auth service for `jwt`
 - `tls-profile`: optional outbound TLS profile name
 
 ### Auth Service Fields
@@ -142,14 +146,14 @@ Place OpenAPI files under:
 src/main/resources/schemas/
 ```
 
-At startup, the proxy loads every schema referenced by `gateway.backends[*].schema`.
+At startup, the shared library loads every schema file found under `gateway.schemas.directory`, keeps them in memory, and reuses them for validation and Swagger/OpenAPI decoration.
 
 Validation behavior:
 
 - path validation: enabled by `gateway.schemas.validate-requests`
 - JSON body validation: enabled by `gateway.schemas.validate-bodies`
 - strict schema presence: enabled by `gateway.schemas.strict-mode`
-- response validation: currently not implemented
+- JSON response trimming: enabled by `gateway.schemas.validate-responses`
 
 ## Examples
 
@@ -211,8 +215,14 @@ gateway:
       path: /api
       schema: legacy-service.yaml
       securityType: jwt
-      authScopes:
-        - read:users
+      auth-request:
+        sparte-gvo:
+          - a
+          - b
+        btx:
+          - FirstFunction
+        pss:
+          - SecondFunction
 ```
 
 ### Private Cloud Run backend
