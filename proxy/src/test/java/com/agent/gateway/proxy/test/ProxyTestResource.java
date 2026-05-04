@@ -12,6 +12,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
@@ -23,6 +24,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
 
     private static final AtomicInteger RETRY_SESSION_CALLS = new AtomicInteger();
     private static final AtomicInteger CLOUD_RUN_AUTH_SESSION_CALLS = new AtomicInteger();
+    private static final AtomicReference<String> LAST_APIGEE_AUTHORIZATION = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_APIGEE_API_KEY = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_GLUE_AUTHORIZATION = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_GLUE_TOKEN = new AtomicReference<>();
 
     @Override
     public Map<String, String> start() {
@@ -35,6 +40,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
 
         RETRY_SESSION_CALLS.set(0);
         CLOUD_RUN_AUTH_SESSION_CALLS.set(0);
+        LAST_APIGEE_AUTHORIZATION.set(null);
+        LAST_APIGEE_API_KEY.set(null);
+        LAST_GLUE_AUTHORIZATION.set(null);
+        LAST_GLUE_TOKEN.set(null);
         registerBackendHandlers();
         registerAuthHandlers();
 
@@ -94,41 +103,67 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[4].auth-request.btx[0]", "FirstFunction");
         config.put("gateway.backends[4].auth-request.pss[0]", "SecondFunction");
 
-        config.put("gateway.backends[5].name", "cloudrun-service");
+        config.put("gateway.backends[5].name", "jwt-apigee-service");
         config.put("gateway.backends[5].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[5].path", "/cloudrun");
-        config.put("gateway.backends[5].schema", "cloudrun-service.yaml");
+        config.put("gateway.backends[5].path", "/jwt-apigee");
+        config.put("gateway.backends[5].schema", "secondary-service.yaml");
         config.put("gateway.backends[5].enabled", "true");
-        config.put("gateway.backends[5].securityType", "cloudrun");
-        config.put("gateway.backends[5].securityConfig.audience", "https://orders-service-ew.a.run.app/");
+        config.put("gateway.backends[5].securityType", "jwt");
+        config.put("gateway.backends[5].auth-request.sparte-gvo[0]", "a");
+        config.put("gateway.backends[5].auth-request.sparte-gvo[1]", "b");
+        config.put("gateway.backends[5].auth-request.btx[0]", "FirstFunction");
+        config.put("gateway.backends[5].auth-request.pss[0]", "SecondFunction");
+        config.put("gateway.backends[5].securityConfig.bearer-source", "customer_access_token");
+        config.put("gateway.backends[5].securityConfig.static-headers.x-api-key", "test-apigee-key");
 
-        config.put("gateway.backends[6].name", "orders-service");
+        config.put("gateway.backends[6].name", "jwt-glue-service");
         config.put("gateway.backends[6].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[6].path", "/orders");
+        config.put("gateway.backends[6].path", "/jwt-glue");
         config.put("gateway.backends[6].schema", "secondary-service.yaml");
         config.put("gateway.backends[6].enabled", "true");
-        config.put("gateway.backends[6].securityType", "none");
+        config.put("gateway.backends[6].securityType", "jwt");
+        config.put("gateway.backends[6].auth-request.sparte-gvo[0]", "a");
+        config.put("gateway.backends[6].auth-request.sparte-gvo[1]", "b");
+        config.put("gateway.backends[6].auth-request.btx[0]", "FirstFunction");
+        config.put("gateway.backends[6].auth-request.pss[0]", "SecondFunction");
+        config.put("gateway.backends[6].securityConfig.bearer-source", "auth_z_token");
+        config.put("gateway.backends[6].securityConfig.token-headers.X-Glue-Token", "glue_token");
 
-        config.put("gateway.backends[7].name", "payments-service");
+        config.put("gateway.backends[7].name", "cloudrun-service");
         config.put("gateway.backends[7].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[7].path", "/payments");
-        config.put("gateway.backends[7].schema", "secondary-service.yaml");
+        config.put("gateway.backends[7].path", "/cloudrun");
+        config.put("gateway.backends[7].schema", "cloudrun-service.yaml");
         config.put("gateway.backends[7].enabled", "true");
-        config.put("gateway.backends[7].securityType", "none");
+        config.put("gateway.backends[7].securityType", "cloudrun");
+        config.put("gateway.backends[7].securityConfig.audience", "https://orders-service-ew.a.run.app/");
 
-        config.put("gateway.backends[8].name", "parameter-service");
+        config.put("gateway.backends[8].name", "orders-service");
         config.put("gateway.backends[8].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[8].path", "/params");
-        config.put("gateway.backends[8].schema", "parameter-service.yaml");
+        config.put("gateway.backends[8].path", "/orders");
+        config.put("gateway.backends[8].schema", "secondary-service.yaml");
         config.put("gateway.backends[8].enabled", "true");
         config.put("gateway.backends[8].securityType", "none");
 
-        config.put("gateway.backends[9].name", "recursive-service");
+        config.put("gateway.backends[9].name", "payments-service");
         config.put("gateway.backends[9].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[9].path", "/recursive");
-        config.put("gateway.backends[9].schema", "recursive-service.yaml");
+        config.put("gateway.backends[9].path", "/payments");
+        config.put("gateway.backends[9].schema", "secondary-service.yaml");
         config.put("gateway.backends[9].enabled", "true");
         config.put("gateway.backends[9].securityType", "none");
+
+        config.put("gateway.backends[10].name", "parameter-service");
+        config.put("gateway.backends[10].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[10].path", "/params");
+        config.put("gateway.backends[10].schema", "parameter-service.yaml");
+        config.put("gateway.backends[10].enabled", "true");
+        config.put("gateway.backends[10].securityType", "none");
+
+        config.put("gateway.backends[11].name", "recursive-service");
+        config.put("gateway.backends[11].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[11].path", "/recursive");
+        config.put("gateway.backends[11].schema", "recursive-service.yaml");
+        config.put("gateway.backends[11].enabled", "true");
+        config.put("gateway.backends[11].securityType", "none");
 
         config.put("gateway.resources.order-summary.schema", "order-summary.yaml");
         config.put("gateway.resources.order-summary.orders-backend", "orders-service");
@@ -157,6 +192,22 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         return CLOUD_RUN_AUTH_SESSION_CALLS.get();
     }
 
+    public static String getLastApigeeAuthorization() {
+        return LAST_APIGEE_AUTHORIZATION.get();
+    }
+
+    public static String getLastApigeeApiKey() {
+        return LAST_APIGEE_API_KEY.get();
+    }
+
+    public static String getLastGlueAuthorization() {
+        return LAST_GLUE_AUTHORIZATION.get();
+    }
+
+    public static String getLastGlueToken() {
+        return LAST_GLUE_TOKEN.get();
+    }
+
     private void registerBackendHandlers() {
         backendServer.createContext("/internal/secondary/ping", exchange ->
             respond(exchange, 200, "{\"status\":\"secondary-ok\",\"internal\":\"discard-me\"}"));
@@ -164,6 +215,16 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             respond(exchange, 200, "{\"ok\":true,\"debug\":true}"));
         backendServer.createContext("/jwt/ping", exchange ->
             respond(exchange, 200, "{\"status\":\"jwt-ok\",\"internal\":\"discard-me\"}"));
+        backendServer.createContext("/jwt-apigee/ping", exchange -> {
+            LAST_APIGEE_AUTHORIZATION.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            LAST_APIGEE_API_KEY.set(exchange.getRequestHeaders().getFirst("x-api-key"));
+            respond(exchange, 200, "{\"status\":\"jwt-ok\",\"internal\":\"discard-me\"}");
+        });
+        backendServer.createContext("/jwt-glue/ping", exchange -> {
+            LAST_GLUE_AUTHORIZATION.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            LAST_GLUE_TOKEN.set(exchange.getRequestHeaders().getFirst("X-Glue-Token"));
+            respond(exchange, 200, "{\"status\":\"jwt-ok\",\"internal\":\"discard-me\"}");
+        });
         backendServer.createContext("/cloudrun/ping", exchange ->
             respond(exchange, 200,
                 "{\"serverlessAuthorization\":\"%s\",\"internal\":\"discard-me\"}".formatted(

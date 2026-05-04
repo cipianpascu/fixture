@@ -182,6 +182,34 @@ class ProxyResourceTest {
     }
 
     @Test
+    void mapsJwtTokensToApigeeStyleHeaders() {
+        given()
+            .header("X-Session-Id", "apigee-session")
+            .when()
+            .get("/api/v1/jwt-apigee-service/ping")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("jwt-ok"));
+
+        assertEquals("Bearer customer-token", ProxyTestResource.getLastApigeeAuthorization());
+        assertEquals("test-apigee-key", ProxyTestResource.getLastApigeeApiKey());
+    }
+
+    @Test
+    void mapsJwtTokensToGlueStyleHeaders() {
+        given()
+            .header("X-Session-Id", "glue-session")
+            .when()
+            .get("/api/v1/jwt-glue-service/ping")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("jwt-ok"));
+
+        assertEquals("Bearer authz-token", ProxyTestResource.getLastGlueAuthorization());
+        assertEquals("glue-token", ProxyTestResource.getLastGlueToken());
+    }
+
+    @Test
     void authenticatesToPrivateCloudRunAuthServiceForJwtBackends() {
         given()
             .header("X-Session-Id", "cloudrun-auth-session")

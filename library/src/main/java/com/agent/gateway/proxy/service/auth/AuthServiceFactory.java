@@ -108,7 +108,8 @@ public class AuthServiceFactory {
         return new JwtAuthService(
             proxyProperties, 
             getAuthClient(),  // Use lazy-initialized client
-            authRequestConfig
+            authRequestConfig,
+            backend.securityConfig()
         );
     }
     

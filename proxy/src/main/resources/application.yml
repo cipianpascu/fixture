@@ -112,6 +112,29 @@ gateway:
           - FirstFunction
         pss:
           - SecondFunction
+      # securityConfig:
+      #   bearer-source: customer_access_token
+      #   static-headers.x-api-key: ${APIGEE_API_KEY}
+
+    # Example: JWT auth for Glue-style backends
+    # - name: glue-service
+    #   baseUrl: http://localhost:9007
+    #   path: /api/v1/glue
+    #   schema: glue-service.yaml
+    #   timeout: 30s
+    #   enabled: true
+    #   securityType: jwt
+    #   auth-request:
+    #     sparte-gvo:
+    #       - a
+    #       - b
+    #     btx:
+    #       - FirstFunction
+    #     pss:
+    #       - SecondFunction
+    #   securityConfig:
+    #     bearer-source: auth_z_token
+    #     token-headers.X-Glue-Token: glue_token
       
     # Example: Basic authentication
     # - name: legacy-service

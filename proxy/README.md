@@ -34,7 +34,7 @@ Per backend, `securityType` can be:
 
 - `none`: no auth enrichment
 - `basic`: injects HTTP Basic credentials from `securityConfig.username/password`
-- `jwt`: calls the configured auth service and forwards returned tokens as `X-Glue-Token`, `X-Auth-Z-Token`, and `X-Customer-Access-Token`
+- `jwt`: calls the configured auth service and maps returned tokens to backend-specific headers
 - `cloudrun`: generates a Google ID token and sends it as `X-Serverless-Authorization`
 
 Auth-service calls are configured separately under `gateway.auth`. The auth service itself can also use Cloud Run IAM auth with:
@@ -109,6 +109,14 @@ gateway:
 - `securityConfig`: auth-specific key/value config
 - `auth-request`: structured request payload sent to the auth service for `jwt`
 - `tls-profile`: optional outbound TLS profile name
+
+For `securityType: jwt`, `securityConfig` supports:
+
+- `bearer-source`: one of `customer_access_token`, `auth_z_token`, or `glue_token`
+- `bearer-header`: outbound bearer header name, defaults to `Authorization`
+- `bearer-prefix`: bearer prefix, defaults to `Bearer`
+- `token-headers.<Header-Name>`: maps an outbound header to one token field
+- `static-headers.<Header-Name>`: adds a fixed outbound header such as an API key
 
 ### Auth Service Fields
 
@@ -223,6 +231,31 @@ gateway:
           - FirstFunction
         pss:
           - SecondFunction
+      securityConfig:
+        bearer-source: auth_z_token
+        token-headers.X-Glue-Token: glue_token
+
+### Apigee-style JWT backend
+
+```yaml
+gateway:
+  backends:
+    - name: apigee-service
+      baseUrl: https://apigee.example.com
+      path: /api
+      schema: apigee-service.yaml
+      securityType: jwt
+      auth-request:
+        sparte-gvo:
+          - a
+          - b
+        btx:
+          - FirstFunction
+        pss:
+          - SecondFunction
+      securityConfig:
+        bearer-source: customer_access_token
+        static-headers.x-api-key: ${APIGEE_API_KEY}
 ```
 
 ### Private Cloud Run backend
