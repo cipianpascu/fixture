@@ -123,6 +123,13 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[8].enabled", "true");
         config.put("gateway.backends[8].securityType", "none");
 
+        config.put("gateway.backends[9].name", "recursive-service");
+        config.put("gateway.backends[9].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[9].path", "/recursive");
+        config.put("gateway.backends[9].schema", "recursive-service.yaml");
+        config.put("gateway.backends[9].enabled", "true");
+        config.put("gateway.backends[9].securityType", "none");
+
         config.put("gateway.resources.order-summary.schema", "order-summary.yaml");
         config.put("gateway.resources.order-summary.orders-backend", "orders-service");
         config.put("gateway.resources.order-summary.orders-path-template", "/details/{id}");
@@ -167,6 +174,8 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             respond(exchange, 200, "{\"orderId\":\"123\",\"paymentStatus\":\"PAID\",\"internal\":\"discard-me\"}"));
         backendServer.createContext("/params/search/123", exchange ->
             respond(exchange, 200, "{\"ok\":true,\"debug\":\"discard-me\"}"));
+        backendServer.createContext("/recursive/tree", exchange ->
+            respond(exchange, 200, "{\"ok\":true}"));
     }
 
     private void registerAuthHandlers() {

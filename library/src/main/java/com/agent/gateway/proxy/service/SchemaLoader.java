@@ -355,16 +355,35 @@ public class SchemaLoader {
      */
     private com.fasterxml.jackson.databind.JsonNode convertToJsonSchema(
             io.swagger.v3.oas.models.media.Schema<?> schema, OpenAPI openAPI) throws Exception {
+        return convertToJsonSchema(schema, openAPI, new HashSet<>(), Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode convertToJsonSchema(
+            io.swagger.v3.oas.models.media.Schema<?> schema,
+            OpenAPI openAPI,
+            Set<String> visitingRefs,
+            Set<io.swagger.v3.oas.models.media.Schema<?>> visitingSchemas) throws Exception {
         
         Map<String, Object> jsonSchema = new HashMap<>();
         
         // Handle $ref
         if (schema.get$ref() != null) {
             String ref = schema.get$ref();
+            if (!visitingRefs.add(ref)) {
+                return objectMapper.valueToTree(shallowSchemaMap(resolveSchemaReference(ref, openAPI)));
+            }
             io.swagger.v3.oas.models.media.Schema<?> resolvedSchema = resolveSchemaReference(ref, openAPI);
             if (resolvedSchema != null) {
-                return convertToJsonSchema(resolvedSchema, openAPI);
+                try {
+                    return convertToJsonSchema(resolvedSchema, openAPI, visitingRefs, visitingSchemas);
+                } finally {
+                    visitingRefs.remove(ref);
+                }
             }
+        }
+
+        if (!visitingSchemas.add(schema)) {
+            return objectMapper.valueToTree(shallowSchemaMap(schema));
         }
         
         jsonSchema.put("$schema", "http://json-schema.org/draft-07/schema#");
@@ -376,7 +395,7 @@ public class SchemaLoader {
         if (schema.getProperties() != null && !schema.getProperties().isEmpty()) {
             Map<String, Object> properties = new HashMap<>();
             for (Map.Entry<String, io.swagger.v3.oas.models.media.Schema> entry : schema.getProperties().entrySet()) {
-                properties.put(entry.getKey(), schemaToMap(entry.getValue(), openAPI));
+                properties.put(entry.getKey(), schemaToMap(entry.getValue(), openAPI, visitingRefs, visitingSchemas));
             }
             jsonSchema.put("properties", properties);
         }
@@ -386,7 +405,7 @@ public class SchemaLoader {
         }
         
         if (schema.getItems() != null) {
-            jsonSchema.put("items", schemaToMap(schema.getItems(), openAPI));
+            jsonSchema.put("items", schemaToMap(schema.getItems(), openAPI, visitingRefs, visitingSchemas));
         }
         
         if (schema.getEnum() != null) {
@@ -417,29 +436,50 @@ public class SchemaLoader {
             jsonSchema.put("pattern", schema.getPattern());
         }
         
+        visitingSchemas.remove(schema);
         return objectMapper.valueToTree(jsonSchema);
     }
     
     private Map<String, Object> schemaToMap(io.swagger.v3.oas.models.media.Schema<?> schema, OpenAPI openAPI) {
+        return schemaToMap(schema, openAPI, new HashSet<>(), Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private Map<String, Object> schemaToMap(
+        io.swagger.v3.oas.models.media.Schema<?> schema,
+        OpenAPI openAPI,
+        Set<String> visitingRefs,
+        Set<io.swagger.v3.oas.models.media.Schema<?>> visitingSchemas) {
         Map<String, Object> map = new HashMap<>();
         
         if (schema.get$ref() != null) {
-            io.swagger.v3.oas.models.media.Schema<?> resolvedSchema = resolveSchemaReference(schema.get$ref(), openAPI);
-            if (resolvedSchema != null) {
-                return schemaToMap(resolvedSchema, openAPI);
+            String ref = schema.get$ref();
+            if (!visitingRefs.add(ref)) {
+                return shallowSchemaMap(resolveSchemaReference(ref, openAPI));
             }
+            io.swagger.v3.oas.models.media.Schema<?> resolvedSchema = resolveSchemaReference(ref, openAPI);
+            if (resolvedSchema != null) {
+                try {
+                    return schemaToMap(resolvedSchema, openAPI, visitingRefs, visitingSchemas);
+                } finally {
+                    visitingRefs.remove(ref);
+                }
+            }
+        }
+
+        if (!visitingSchemas.add(schema)) {
+            return shallowSchemaMap(schema);
         }
         
         if (schema.getType() != null) map.put("type", schema.getType());
         if (schema.getProperties() != null) {
             Map<String, Object> properties = new HashMap<>();
             for (Map.Entry<String, io.swagger.v3.oas.models.media.Schema> entry : schema.getProperties().entrySet()) {
-                properties.put(entry.getKey(), schemaToMap(entry.getValue(), openAPI));
+                properties.put(entry.getKey(), schemaToMap(entry.getValue(), openAPI, visitingRefs, visitingSchemas));
             }
             map.put("properties", properties);
         }
         if (schema.getRequired() != null) map.put("required", schema.getRequired());
-        if (schema.getItems() != null) map.put("items", schemaToMap(schema.getItems(), openAPI));
+        if (schema.getItems() != null) map.put("items", schemaToMap(schema.getItems(), openAPI, visitingRefs, visitingSchemas));
         if (schema.getEnum() != null) map.put("enum", schema.getEnum());
         if (schema.getFormat() != null) map.put("format", schema.getFormat());
         if (schema.getMinimum() != null) map.put("minimum", schema.getMinimum());
@@ -447,7 +487,39 @@ public class SchemaLoader {
         if (schema.getMinLength() != null) map.put("minLength", schema.getMinLength());
         if (schema.getMaxLength() != null) map.put("maxLength", schema.getMaxLength());
         if (schema.getPattern() != null) map.put("pattern", schema.getPattern());
-        
+        visitingSchemas.remove(schema);
+        return map;
+    }
+
+    private Map<String, Object> shallowSchemaMap(io.swagger.v3.oas.models.media.Schema<?> schema) {
+        Map<String, Object> map = new HashMap<>();
+        if (schema == null) {
+            return map;
+        }
+        if (schema.getType() != null) {
+            map.put("type", schema.getType());
+        }
+        if (schema.getEnum() != null) {
+            map.put("enum", schema.getEnum());
+        }
+        if (schema.getFormat() != null) {
+            map.put("format", schema.getFormat());
+        }
+        if (schema.getMinimum() != null) {
+            map.put("minimum", schema.getMinimum());
+        }
+        if (schema.getMaximum() != null) {
+            map.put("maximum", schema.getMaximum());
+        }
+        if (schema.getMinLength() != null) {
+            map.put("minLength", schema.getMinLength());
+        }
+        if (schema.getMaxLength() != null) {
+            map.put("maxLength", schema.getMaxLength());
+        }
+        if (schema.getPattern() != null) {
+            map.put("pattern", schema.getPattern());
+        }
         return map;
     }
     

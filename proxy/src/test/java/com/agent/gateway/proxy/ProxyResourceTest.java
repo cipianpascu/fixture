@@ -56,6 +56,28 @@ class ProxyResourceTest {
     }
 
     @Test
+    void handlesRecursiveRequestSchemasWithoutFailingStartup() {
+        given()
+            .contentType(ContentType.JSON)
+            .body("""
+                {
+                  "name": "root",
+                  "children": [
+                    {
+                      "name": "child",
+                      "children": []
+                    }
+                  ]
+                }
+                """)
+            .when()
+            .post("/api/v1/recursive-service/tree")
+            .then()
+            .statusCode(200)
+            .body("ok", equalTo(true));
+    }
+
+    @Test
     void validatesPathParametersAgainstTheirDeclaredSchema() {
         given()
             .contentType(ContentType.JSON)
