@@ -1,35 +1,21 @@
 package com.agent.gateway.proxy;
 
 import com.agent.gateway.proxy.test.ProxyTestResource;
-import com.agent.gateway.proxy.service.auth.GoogleCloudRunIdTokenProvider;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
-import io.quarkus.test.junit.QuarkusMock;
 import io.restassured.http.ContentType;
-import org.junit.jupiter.api.BeforeAll;
+import io.restassured.response.Response;
 import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 @QuarkusTest
 @QuarkusTestResource(ProxyTestResource.class)
-class ProxyResourceTest {
-
-    @BeforeAll
-    static void installCloudRunTokenProviderMock() {
-        QuarkusMock.installMockForType(
-            new GoogleCloudRunIdTokenProvider() {
-                @Override
-                public String getIdToken(String audience) {
-                    return "test-id-token-for:" + audience;
-                }
-            },
-            GoogleCloudRunIdTokenProvider.class
-        );
-    }
+class ProxyResourceTest extends AbstractProxyQuarkusTest {
 
     @Test
     void loadsConfiguredSchemasAndForwardsRequests() {
@@ -183,30 +169,39 @@ class ProxyResourceTest {
 
     @Test
     void mapsJwtTokensToApigeeStyleHeaders() {
-        given()
+        Response response = given()
             .header("X-Session-Id", "apigee-session")
             .when()
             .get("/api/v1/jwt-apigee-service/ping")
             .then()
             .statusCode(200)
-            .body("status", equalTo("jwt-ok"));
+            .body("status", equalTo("jwt-ok"))
+            .extract()
+            .response();
 
         assertEquals("Bearer customer-token", ProxyTestResource.getLastApigeeAuthorization());
         assertEquals("test-apigee-key", ProxyTestResource.getLastApigeeApiKey());
+        assertNull(response.getHeader("Authorization"));
+        assertNull(response.getHeader("x-api-key"));
+        assertNull(response.getHeader("Set-Cookie"));
     }
 
     @Test
     void mapsJwtTokensToGlueStyleHeaders() {
-        given()
+        Response response = given()
             .header("X-Session-Id", "glue-session")
             .when()
             .get("/api/v1/jwt-glue-service/ping")
             .then()
             .statusCode(200)
-            .body("status", equalTo("jwt-ok"));
+            .body("status", equalTo("jwt-ok"))
+            .extract()
+            .response();
 
         assertEquals("Bearer authz-token", ProxyTestResource.getLastGlueAuthorization());
         assertEquals("glue-token", ProxyTestResource.getLastGlueToken());
+        assertNull(response.getHeader("Authorization"));
+        assertNull(response.getHeader("X-Glue-Token"));
     }
 
     @Test

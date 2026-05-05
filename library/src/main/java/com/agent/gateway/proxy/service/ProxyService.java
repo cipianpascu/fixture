@@ -25,6 +25,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Locale;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.Map;
@@ -45,6 +46,18 @@ public class ProxyService {
         "host",
         "transfer-encoding",
         "upgrade"
+    );
+
+    private static final Set<String> SENSITIVE_RESPONSE_HEADERS = Set.of(
+        "authorization",
+        "proxy-authorization",
+        "proxy-authenticate",
+        "set-cookie",
+        "cookie",
+        "x-glue-token",
+        "x-auth-z-token",
+        "x-customer-access-token",
+        "x-serverless-authorization"
     );
     
     @Inject
@@ -116,9 +129,13 @@ public class ProxyService {
             Response.ResponseBuilder responseBuilder = Response.status(response.statusCode());
             
             // Copy response headers
-            response.headers().map().forEach((name, values) -> 
-                values.forEach(value -> responseBuilder.header(name, value))
-            );
+            Set<String> blockedResponseHeaders = blockedResponseHeaders(backend);
+            response.headers().map().forEach((name, values) -> {
+                if (blockedResponseHeaders.contains(name.toLowerCase(Locale.ROOT))) {
+                    return;
+                }
+                values.forEach(value -> responseBuilder.header(name, value));
+            });
             
             // Set body
             responseBuilder.entity(response.body());
@@ -207,5 +224,34 @@ public class ProxyService {
             .connectTimeout(Duration.ofSeconds(30));
         tlsContextFactory.createBackendSslContext(backend).ifPresent(builder::sslContext);
         return builder.build();
+    }
+
+    private Set<String> blockedResponseHeaders(ProxyProperties.BackendDefinition backend) {
+        Set<String> blocked = new LinkedHashSet<>(HOP_BY_HOP_HEADERS);
+        blocked.addAll(SENSITIVE_RESPONSE_HEADERS);
+
+        Map<String, String> securityConfig = backend.securityConfig();
+        if (securityConfig == null || securityConfig.isEmpty()) {
+            return blocked;
+        }
+
+        String bearerHeader = securityConfig.get("bearer-header");
+        if (bearerHeader != null && !bearerHeader.isBlank()) {
+            blocked.add(bearerHeader.toLowerCase(Locale.ROOT));
+        }
+
+        securityConfig.keySet().forEach(key -> {
+            if (key == null) {
+                return;
+            }
+            if (key.startsWith("token-headers.")) {
+                blocked.add(key.substring("token-headers.".length()).toLowerCase(Locale.ROOT));
+            }
+            if (key.startsWith("static-headers.")) {
+                blocked.add(key.substring("static-headers.".length()).toLowerCase(Locale.ROOT));
+            }
+        });
+
+        return blocked;
     }
 }

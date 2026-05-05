@@ -28,6 +28,8 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
     private static final AtomicReference<String> LAST_APIGEE_API_KEY = new AtomicReference<>();
     private static final AtomicReference<String> LAST_GLUE_AUTHORIZATION = new AtomicReference<>();
     private static final AtomicReference<String> LAST_GLUE_TOKEN = new AtomicReference<>();
+    private static final AtomicInteger ORDER_DETAILS_CALLS = new AtomicInteger();
+    private static final AtomicInteger PAYMENT_ORDER_CALLS = new AtomicInteger();
 
     @Override
     public Map<String, String> start() {
@@ -44,6 +46,8 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         LAST_APIGEE_API_KEY.set(null);
         LAST_GLUE_AUTHORIZATION.set(null);
         LAST_GLUE_TOKEN.set(null);
+        ORDER_DETAILS_CALLS.set(0);
+        PAYMENT_ORDER_CALLS.set(0);
         registerBackendHandlers();
         registerAuthHandlers();
 
@@ -208,6 +212,14 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         return LAST_GLUE_TOKEN.get();
     }
 
+    public static int getOrderDetailsCalls() {
+        return ORDER_DETAILS_CALLS.get();
+    }
+
+    public static int getPaymentOrderCalls() {
+        return PAYMENT_ORDER_CALLS.get();
+    }
+
     private void registerBackendHandlers() {
         backendServer.createContext("/internal/secondary/ping", exchange ->
             respond(exchange, 200, "{\"status\":\"secondary-ok\",\"internal\":\"discard-me\"}"));
@@ -218,21 +230,38 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         backendServer.createContext("/jwt-apigee/ping", exchange -> {
             LAST_APIGEE_AUTHORIZATION.set(exchange.getRequestHeaders().getFirst("Authorization"));
             LAST_APIGEE_API_KEY.set(exchange.getRequestHeaders().getFirst("x-api-key"));
+            exchange.getResponseHeaders().add("Authorization", "Bearer should-not-leak");
+            exchange.getResponseHeaders().add("x-api-key", "should-not-leak");
+            exchange.getResponseHeaders().add("Set-Cookie", "session=should-not-leak");
             respond(exchange, 200, "{\"status\":\"jwt-ok\",\"internal\":\"discard-me\"}");
         });
         backendServer.createContext("/jwt-glue/ping", exchange -> {
             LAST_GLUE_AUTHORIZATION.set(exchange.getRequestHeaders().getFirst("Authorization"));
             LAST_GLUE_TOKEN.set(exchange.getRequestHeaders().getFirst("X-Glue-Token"));
+            exchange.getResponseHeaders().add("Authorization", "Bearer should-not-leak");
+            exchange.getResponseHeaders().add("X-Glue-Token", "should-not-leak");
             respond(exchange, 200, "{\"status\":\"jwt-ok\",\"internal\":\"discard-me\"}");
         });
         backendServer.createContext("/cloudrun/ping", exchange ->
             respond(exchange, 200,
                 "{\"serverlessAuthorization\":\"%s\",\"internal\":\"discard-me\"}".formatted(
                     exchange.getRequestHeaders().getFirst("X-Serverless-Authorization"))));
-        backendServer.createContext("/orders/details/123", exchange ->
-            respond(exchange, 200, "{\"id\":\"123\",\"status\":\"READY\",\"internal\":\"discard-me\"}"));
-        backendServer.createContext("/payments/orders/123", exchange ->
-            respond(exchange, 200, "{\"orderId\":\"123\",\"paymentStatus\":\"PAID\",\"internal\":\"discard-me\"}"));
+        backendServer.createContext("/orders/details/123", exchange -> {
+            ORDER_DETAILS_CALLS.incrementAndGet();
+            respond(exchange, 200, "{\"id\":\"123\",\"status\":\"READY\",\"internal\":\"discard-me\"}");
+        });
+        backendServer.createContext("/orders/details/500", exchange -> {
+            ORDER_DETAILS_CALLS.incrementAndGet();
+            respond(exchange, 200, "{\"id\":\"500\",\"status\":\"READY\",\"internal\":\"discard-me\"}");
+        });
+        backendServer.createContext("/payments/orders/123", exchange -> {
+            PAYMENT_ORDER_CALLS.incrementAndGet();
+            respond(exchange, 200, "{\"orderId\":\"123\",\"paymentStatus\":\"PAID\",\"internal\":\"discard-me\"}");
+        });
+        backendServer.createContext("/payments/orders/500", exchange -> {
+            PAYMENT_ORDER_CALLS.incrementAndGet();
+            respond(exchange, 502, "{\"error\":\"payments-down\",\"internal\":\"discard-me\"}");
+        });
         backendServer.createContext("/params/search/123", exchange ->
             respond(exchange, 200, "{\"ok\":true,\"debug\":\"discard-me\"}"));
         backendServer.createContext("/recursive/tree", exchange ->
