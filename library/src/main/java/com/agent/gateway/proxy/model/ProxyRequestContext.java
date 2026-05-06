@@ -1,5 +1,6 @@
 package com.agent.gateway.proxy.model;
 
+import java.util.Locale;
 import java.util.Map;
 
 public record ProxyRequestContext(
@@ -11,7 +12,10 @@ public record ProxyRequestContext(
 ) {
 
     public String header(String name) {
-        return headers.get(name);
+        if (name == null) {
+            return null;
+        }
+        return headers.get(name.toLowerCase(Locale.ROOT));
     }
 
     public String cookie(String name) {

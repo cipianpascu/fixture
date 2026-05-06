@@ -168,6 +168,17 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
     }
 
     @Test
+    void acceptsLowercaseSessionIdHeaderForJwtBackends() {
+        given()
+            .header("x-session-id", "retry-session")
+            .when()
+            .get("/api/v1/jwt-service/ping")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("jwt-ok"));
+    }
+
+    @Test
     void mapsJwtTokensToApigeeStyleHeaders() {
         Response response = given()
             .header("X-Session-Id", "apigee-session")

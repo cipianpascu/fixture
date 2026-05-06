@@ -13,6 +13,7 @@ import jakarta.ws.rs.core.UriInfo;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 @Slf4j
@@ -111,7 +112,7 @@ public abstract class BaseResource {
         Map<String, String> headers = new HashMap<>();
         httpHeaders.getRequestHeaders().forEach((key, values) -> {
             if (!values.isEmpty()) {
-                headers.put(key, values.get(0));
+                headers.put(key.toLowerCase(Locale.ROOT), values.get(0));
             }
         });
 
@@ -133,11 +134,13 @@ public abstract class BaseResource {
         String queryString,
         Map<String, String> headers,
         Map<String, String> cookies) {
+        Map<String, String> normalizedHeaders = new HashMap<>();
+        headers.forEach((key, value) -> normalizedHeaders.put(key.toLowerCase(Locale.ROOT), value));
         return new ProxyRequestContext(
             method,
             requestUri,
             queryString,
-            new HashMap<>(headers),
+            normalizedHeaders,
             new HashMap<>(cookies)
         );
     }

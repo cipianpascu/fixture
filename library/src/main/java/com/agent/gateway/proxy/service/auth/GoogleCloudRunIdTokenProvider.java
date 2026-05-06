@@ -1,6 +1,7 @@
 package com.agent.gateway.proxy.service.auth;
 
 import com.agent.gateway.proxy.exception.AuthServiceException;
+import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.IdTokenCredentials;
 import com.google.auth.oauth2.IdTokenProvider;
@@ -25,8 +26,12 @@ public class GoogleCloudRunIdTokenProvider implements CloudRunIdTokenProvider {
                 .setTargetAudience(audience)
                 .setOptions(java.util.List.of(IdTokenProvider.Option.FORMAT_FULL))
                 .build();
-            tokenCredentials.refreshAccessToken();
-            return tokenCredentials.getAccessToken().getTokenValue();
+            AccessToken idToken = tokenCredentials.refreshAccessToken();
+            if (idToken == null || idToken.getTokenValue() == null || idToken.getTokenValue().isBlank()) {
+                throw new AuthServiceException(
+                    "Cloud Run ID token provider returned an empty token for audience '%s'".formatted(audience));
+            }
+            return idToken.getTokenValue();
         } catch (IOException e) {
             throw new AuthServiceException(
                 "Failed to generate Cloud Run ID token for audience '%s'".formatted(audience), e);
