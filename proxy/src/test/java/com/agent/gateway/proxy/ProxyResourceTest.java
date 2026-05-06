@@ -178,7 +178,6 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
             .body("status", equalTo("jwt-ok"));
     }
 
-    @Test
     void mapsJwtTokensToApigeeStyleHeaders() {
         Response response = given()
             .header("X-Session-Id", "apigee-session")

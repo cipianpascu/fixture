@@ -302,6 +302,11 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
                 return;
             }
 
+            if ("fatal-session".equals(sessionId)) {
+                respond(exchange, 500, "{\"error\":\"auth-service-down\"}");
+                return;
+            }
+
             respond(
                 exchange,
                 200,
