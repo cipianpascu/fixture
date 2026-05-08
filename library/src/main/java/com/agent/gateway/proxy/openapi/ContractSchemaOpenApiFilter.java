@@ -35,7 +35,7 @@ public class ContractSchemaOpenApiFilter implements OASFilter {
                     continue;
                 }
 
-                PathItem contractPathItem = contractDocument.getPaths().getPathItem(publicPath);
+                PathItem contractPathItem = findMatchingPathItem(contractDocument, publicPath);
                 if (contractPathItem == null) {
                     continue;
                 }
@@ -49,6 +49,45 @@ public class ContractSchemaOpenApiFilter implements OASFilter {
 
     private boolean isGenericProxyPath(String publicPath) {
         return publicPath.contains("{backendName}") || publicPath.contains("{path}");
+    }
+
+    PathItem findMatchingPathItem(
+        org.eclipse.microprofile.openapi.models.OpenAPI contractDocument,
+        String publicPath) {
+
+        PathItem exact = contractDocument.getPaths().getPathItem(publicPath);
+        if (exact != null) {
+            return exact;
+        }
+
+        String[] publicSegments = pathSegments(publicPath);
+        for (Map.Entry<String, PathItem> entry : contractDocument.getPaths().getPathItems().entrySet()) {
+            if (sameTrailingSegments(publicSegments, pathSegments(entry.getKey()))) {
+                return entry.getValue();
+            }
+        }
+
+        return null;
+    }
+
+    private boolean sameTrailingSegments(String[] publicSegments, String[] contractSegments) {
+        if (contractSegments.length > publicSegments.length) {
+            return false;
+        }
+
+        int offset = publicSegments.length - contractSegments.length;
+        for (int i = 0; i < contractSegments.length; i++) {
+            if (!publicSegments[offset + i].equals(contractSegments[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String[] pathSegments(String path) {
+        return java.util.Arrays.stream(path.split("/"))
+            .filter(segment -> !segment.isBlank())
+            .toArray(String[]::new);
     }
 
     private void applyContractPathItem(PathItem target, PathItem contract) {

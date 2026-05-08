@@ -2,6 +2,8 @@ package com.agent.gateway.proxy.openapi;
 
 import org.eclipse.microprofile.openapi.OASFactory;
 import org.eclipse.microprofile.openapi.models.Operation;
+import org.eclipse.microprofile.openapi.models.OpenAPI;
+import org.eclipse.microprofile.openapi.models.PathItem;
 import org.eclipse.microprofile.openapi.models.parameters.Parameter;
 import org.junit.jupiter.api.Test;
 
@@ -35,5 +37,17 @@ class ContractSchemaOpenApiFilterTest {
         assertEquals(1, scannedOperation.getParameters().size());
         assertEquals("id", scannedOperation.getParameters().get(0).getName());
         assertEquals(Parameter.In.PATH, scannedOperation.getParameters().get(0).getIn());
+    }
+
+    @Test
+    void matchesContractPathsByTrailingSegmentsWhenPublicPrefixIsPresent() {
+        OpenAPI contractDocument = OASFactory.createOpenAPI();
+        contractDocument.setPaths(OASFactory.createPaths());
+        PathItem contractPathItem = OASFactory.createPathItem();
+        contractDocument.getPaths().addPathItem("/order-summaries/{id}", contractPathItem);
+
+        PathItem matched = filter.findMatchingPathItem(contractDocument, "/api/v1/order-summaries/{id}");
+
+        assertEquals(contractPathItem, matched);
     }
 }
