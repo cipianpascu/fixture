@@ -8,6 +8,7 @@ import org.eclipse.microprofile.openapi.OASFactory;
 import org.eclipse.microprofile.openapi.OASFilter;
 import org.eclipse.microprofile.openapi.models.Components;
 import org.eclipse.microprofile.openapi.models.OpenAPI;
+import org.eclipse.microprofile.openapi.models.Operation;
 import org.eclipse.microprofile.openapi.models.PathItem;
 import java.util.Map;
 
@@ -61,9 +62,70 @@ public class ContractSchemaOpenApiFilter implements OASFilter {
             target.setParameters(contract.getParameters());
         }
 
-        for (Map.Entry<PathItem.HttpMethod, org.eclipse.microprofile.openapi.models.Operation> operationEntry
-            : contract.getOperations().entrySet()) {
-            target.setOperation(operationEntry.getKey(), operationEntry.getValue());
+        for (Map.Entry<PathItem.HttpMethod, Operation> operationEntry : contract.getOperations().entrySet()) {
+            PathItem.HttpMethod method = operationEntry.getKey();
+            Operation contractOperation = operationEntry.getValue();
+            Operation targetOperation = operationFor(target, method);
+            if (targetOperation == null) {
+                target.setOperation(method, contractOperation);
+                continue;
+            }
+            applyContractOperation(targetOperation, contractOperation);
+        }
+    }
+
+    private Operation operationFor(PathItem pathItem, PathItem.HttpMethod method) {
+        return switch (method) {
+            case GET -> pathItem.getGET();
+            case PUT -> pathItem.getPUT();
+            case POST -> pathItem.getPOST();
+            case DELETE -> pathItem.getDELETE();
+            case OPTIONS -> pathItem.getOPTIONS();
+            case HEAD -> pathItem.getHEAD();
+            case PATCH -> pathItem.getPATCH();
+            case TRACE -> pathItem.getTRACE();
+        };
+    }
+
+    void applyContractOperation(Operation target, Operation contract) {
+        if (contract.getTags() != null && !contract.getTags().isEmpty()) {
+            target.setTags(contract.getTags());
+        }
+        if (contract.getSummary() != null) {
+            target.setSummary(contract.getSummary());
+        }
+        if (contract.getDescription() != null) {
+            target.setDescription(contract.getDescription());
+        }
+        if (contract.getExternalDocs() != null) {
+            target.setExternalDocs(contract.getExternalDocs());
+        }
+        if (contract.getOperationId() != null) {
+            target.setOperationId(contract.getOperationId());
+        }
+        if (contract.getParameters() != null && !contract.getParameters().isEmpty()) {
+            target.setParameters(contract.getParameters());
+        }
+        if (contract.getRequestBody() != null) {
+            target.setRequestBody(contract.getRequestBody());
+        }
+        if (contract.getResponses() != null && !contract.getResponses().getAPIResponses().isEmpty()) {
+            target.setResponses(contract.getResponses());
+        }
+        if (contract.getCallbacks() != null && !contract.getCallbacks().isEmpty()) {
+            target.setCallbacks(contract.getCallbacks());
+        }
+        if (contract.getDeprecated() != null) {
+            target.setDeprecated(contract.getDeprecated());
+        }
+        if (contract.getSecurity() != null && !contract.getSecurity().isEmpty()) {
+            target.setSecurity(contract.getSecurity());
+        }
+        if (contract.getServers() != null && !contract.getServers().isEmpty()) {
+            target.setServers(contract.getServers());
+        }
+        if (contract.getExtensions() != null && !contract.getExtensions().isEmpty()) {
+            target.setExtensions(contract.getExtensions());
         }
     }
 
