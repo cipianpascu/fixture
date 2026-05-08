@@ -17,5 +17,5 @@ public interface AuthService {
      * @param request The incoming HTTP request context
      * @param headers The headers to enrich (will be modified in place)
      */
-    void enrichHeaders(ProxyRequestContext request, Map<String, String> headers);
+    void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody);
 }

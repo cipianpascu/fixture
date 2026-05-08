@@ -24,7 +24,7 @@ public class BasicAuthService implements AuthService {
     }
     
     @Override
-    public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers) {
+    public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody) {
         headers.put("Authorization", basicAuthHeader);
         log.debug("Attached Basic auth header for user: {}", username);
     }

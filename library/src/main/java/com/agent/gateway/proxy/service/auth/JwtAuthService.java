@@ -38,7 +38,7 @@ public class JwtAuthService implements AuthService {
     }
     
     @Override
-    public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers) {
+    public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody) {
         if (!proxyProperties.auth().enabled()) {
             log.debug("Auth is disabled, skipping token retrieval");
             return;

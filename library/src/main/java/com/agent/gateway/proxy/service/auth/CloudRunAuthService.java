@@ -20,7 +20,7 @@ public class CloudRunAuthService implements AuthService {
     }
 
     @Override
-    public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers) {
+    public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody) {
         String idToken = idTokenProvider.getIdToken(audience);
         headers.put(CLOUD_RUN_AUTH_HEADER, "Bearer " + idToken);
     }

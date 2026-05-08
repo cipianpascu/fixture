@@ -84,6 +84,7 @@ public class AuthServiceFactory {
         return switch (authType.toLowerCase()) {
             case "jwt" -> createJwtAuthService(backend);
             case "basic", "basic_auth" -> createBasicAuthService(backend);
+            case "transactionid", "transaction_id" -> createTransactionIdAuthService(backend);
             case "cloudrun", "cloud_run" -> createCloudRunAuthService(backend);
             case "none" -> new NoOpAuthService();
             default -> {
@@ -139,13 +140,23 @@ public class AuthServiceFactory {
             backend.securityConfig()
         );
     }
+
+    private AuthService createTransactionIdAuthService(ProxyProperties.BackendDefinition backend) {
+        log.debug("Creating transaction-id auth service for backend: {}", backend.name());
+        return new TransactionIdAuthService(
+            proxyProperties,
+            tlsContextFactory,
+            cloudRunIdTokenProvider,
+            backend.securityConfig()
+        );
+    }
     
     /**
      * No-op auth service (does nothing)
      */
-    private static class NoOpAuthService implements AuthService {
+        private static class NoOpAuthService implements AuthService {
         @Override
-        public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers) {
+        public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody) {
             // Do nothing
         }
     }

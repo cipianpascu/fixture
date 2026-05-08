@@ -1,0 +1,30 @@
+openapi: 3.0.0
+info:
+  title: Transaction Service API
+  version: 1.0.0
+
+paths:
+  /appointments:
+    post:
+      operationId: createAppointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - payload
+              properties:
+                payload:
+                  type: string
+      responses:
+        '200':
+          description: appointment accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string

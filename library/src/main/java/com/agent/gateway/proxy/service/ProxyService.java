@@ -100,7 +100,7 @@ public class ProxyService {
             
             // Get appropriate auth service for this backend and enrich headers
             AuthService authService = authServiceFactory.createAuthService(backend);
-            authService.enrichHeaders(request, headers);
+            authService.enrichHeaders(request, headers, requestBody);
             
             // Build HTTP request
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
@@ -246,6 +246,9 @@ public class ProxyService {
             }
             if (key.startsWith("token-headers.")) {
                 blocked.add(key.substring("token-headers.".length()).toLowerCase(Locale.ROOT));
+            }
+            if (key.startsWith("response-headers.")) {
+                blocked.add(key.substring("response-headers.".length()).toLowerCase(Locale.ROOT));
             }
             if (key.startsWith("static-headers.")) {
                 blocked.add(key.substring("static-headers.".length()).toLowerCase(Locale.ROOT));

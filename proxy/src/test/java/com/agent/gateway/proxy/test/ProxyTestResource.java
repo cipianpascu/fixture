@@ -28,6 +28,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
     private static final AtomicReference<String> LAST_APIGEE_API_KEY = new AtomicReference<>();
     private static final AtomicReference<String> LAST_GLUE_AUTHORIZATION = new AtomicReference<>();
     private static final AtomicReference<String> LAST_GLUE_TOKEN = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_TRANSACTION_REQUEST_ID = new AtomicReference<>();
     private static final AtomicInteger ORDER_DETAILS_CALLS = new AtomicInteger();
     private static final AtomicInteger PAYMENT_ORDER_CALLS = new AtomicInteger();
 
@@ -46,6 +47,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         LAST_APIGEE_API_KEY.set(null);
         LAST_GLUE_AUTHORIZATION.set(null);
         LAST_GLUE_TOKEN.set(null);
+        LAST_TRANSACTION_REQUEST_ID.set(null);
         ORDER_DETAILS_CALLS.set(0);
         PAYMENT_ORDER_CALLS.set(0);
         registerBackendHandlers();
@@ -169,6 +171,16 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[11].enabled", "true");
         config.put("gateway.backends[11].securityType", "none");
 
+        config.put("gateway.backends[12].name", "transactionid-service");
+        config.put("gateway.backends[12].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[12].path", "/tx");
+        config.put("gateway.backends[12].schema", "transaction-service.yaml");
+        config.put("gateway.backends[12].enabled", "true");
+        config.put("gateway.backends[12].securityType", "transactionid");
+        config.put("gateway.backends[12].securityConfig.auth-path", "/auth/transactions");
+        config.put("gateway.backends[12].securityConfig.request-body.processId", "header:Process-Id");
+        config.put("gateway.backends[12].securityConfig.response-headers.x-request-id", "transactionId");
+
         config.put("gateway.resources.order-summary.schema", "order-summary.yaml");
         config.put("gateway.resources.order-summary.orders-backend", "orders-service");
         config.put("gateway.resources.order-summary.orders-path-template", "/details/{id}");
@@ -212,6 +224,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         return LAST_GLUE_TOKEN.get();
     }
 
+    public static String getLastTransactionRequestId() {
+        return LAST_TRANSACTION_REQUEST_ID.get();
+    }
+
     public static int getOrderDetailsCalls() {
         return ORDER_DETAILS_CALLS.get();
     }
@@ -246,6 +262,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             respond(exchange, 200,
                 "{\"serverlessAuthorization\":\"%s\",\"internal\":\"discard-me\"}".formatted(
                     exchange.getRequestHeaders().getFirst("X-Serverless-Authorization"))));
+        backendServer.createContext("/tx/appointments", exchange -> {
+            LAST_TRANSACTION_REQUEST_ID.set(exchange.getRequestHeaders().getFirst("x-request-id"));
+            respond(exchange, 200, "{\"status\":\"tx-ok\",\"internal\":\"discard-me\"}");
+        });
         backendServer.createContext("/orders/details/123", exchange -> {
             ORDER_DETAILS_CALLS.incrementAndGet();
             respond(exchange, 200, "{\"id\":\"123\",\"status\":\"READY\",\"internal\":\"discard-me\"}");
@@ -313,6 +333,25 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
                 "{\"glue_token\":\"glue-token\",\"auth_z_token\":\"authz-token\",\"customer_access_token\":\"customer-token\",\"disallowed_pss\":[]}"
             );
         });
+
+        authServer.createContext("/auth/transactions", exchange -> {
+            String serverlessAuthorization = exchange.getRequestHeaders().getFirst("X-Serverless-Authorization");
+            if (proxyCloudRunAuthMissing(serverlessAuthorization)) {
+                respond(exchange, 401, "{\"error\":\"missing cloud run auth\"}");
+                return;
+            }
+            JsonNode requestBody = OBJECT_MAPPER.readTree(exchange.getRequestBody());
+            String processId = requestBody.path("processId").asText(null);
+            if (processId == null || processId.isBlank()) {
+                respond(exchange, 400, "{\"error\":\"missing processId\"}");
+                return;
+            }
+            respond(exchange, 200, "{\"transactionId\":\"tx-" + processId + "\"}");
+        });
+    }
+
+    private boolean proxyCloudRunAuthMissing(String serverlessAuthorization) {
+        return !"Bearer test-id-token-for:https://oauth-service-ew.a.run.app/".equals(serverlessAuthorization);
     }
 
     private static void assertAuthRequestShape(JsonNode requestBody) {
