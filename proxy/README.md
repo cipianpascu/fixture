@@ -35,6 +35,7 @@ Per backend, `securityType` can be:
 - `none`: no auth enrichment
 - `basic`: injects HTTP Basic credentials from `securityConfig.username/password`
 - `jwt`: calls the configured auth service and maps returned tokens to backend-specific headers
+- `transactionid`: builds an auth-service JSON body from incoming headers and maps returned fields to backend headers
 - `cloudrun`: generates a Google ID token and sends it as `X-Serverless-Authorization`
 
 Auth-service calls are configured separately under `gateway.auth`. The auth service itself can also use Cloud Run IAM auth with:
@@ -105,7 +106,7 @@ gateway:
 - `schema`: OpenAPI schema filename under `schemas/`
 - `timeout`: request timeout for upstream call
 - `enabled`: whether the backend is routable
-- `securityType`: `none`, `basic`, `jwt`, or `cloudrun`
+- `securityType`: `none`, `basic`, `jwt`, `transactionid`, or `cloudrun`
 - `securityConfig`: auth-specific key/value config
 - `auth-request`: structured request payload sent to the auth service for `jwt`
 - `tls-profile`: optional outbound TLS profile name
@@ -117,6 +118,18 @@ For `securityType: jwt`, `securityConfig` supports:
 - `bearer-prefix`: bearer prefix, defaults to `Bearer`
 - `token-headers.<Header-Name>`: maps an outbound header to one token field
 - `static-headers.<Header-Name>`: adds a fixed outbound header such as an API key
+
+For `securityType: transactionid`, `securityConfig` supports:
+
+- `auth-path`: auth-service path to call, defaults to `/auth/transactions`
+- `request-body.<field>`: maps an auth request body field from an incoming source
+- `response-headers.<Header-Name>`: maps an auth response field into an outbound backend header
+
+Supported `request-body.*` mapping sources:
+
+- `header:<Header-Name>`: read from an incoming request header
+- `cookie:<Cookie-Name>`: read from an incoming request cookie
+- `literal:<value>`: use a fixed literal value
 
 ### Auth Service Fields
 
@@ -257,6 +270,35 @@ gateway:
         bearer-source: customer_access_token
         static-headers.x-api-key: ${APIGEE_API_KEY}
 ```
+
+### Header-driven transaction-id backend
+
+```yaml
+gateway:
+  auth:
+    service-url: https://oauth-service-abcde-ew.a.run.app
+    security-type: cloudrun
+    security-config:
+      audience: https://oauth-service-abcde-ew.a.run.app/
+
+  backends:
+    - name: face-service
+      baseUrl: https://face.example.com
+      path: /api
+      schema: face-service.yaml
+      securityType: transactionid
+      securityConfig:
+        auth-path: /auth/transactions
+        request-body.processId: header:Process-Id
+        response-headers.x-request-id: transactionId
+```
+
+Behavior:
+
+- incoming request header `Process-Id: p123`
+- auth request body `{ "processId": "p123" }`
+- auth response body `{ "transactionId": "tx-123" }`
+- backend request header `x-request-id: tx-123`
 
 ### Private Cloud Run backend
 
