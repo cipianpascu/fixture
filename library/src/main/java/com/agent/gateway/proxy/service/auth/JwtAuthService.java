@@ -1,15 +1,14 @@
 package com.agent.gateway.proxy.service.auth;
 
 import com.agent.gateway.proxy.auth.AuthTokens;
-import com.agent.gateway.proxy.client.AuthClient;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.exception.AuthServiceException;
 import com.agent.gateway.proxy.exception.AuthenticationRequiredException;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
-import jakarta.ws.rs.WebApplicationException;
-import jakarta.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -22,17 +21,17 @@ import java.util.Optional;
 public class JwtAuthService implements AuthService {
     
     private final ProxyProperties proxyProperties;
-    private final AuthClient authClient;
+    private final AuthServiceCaller authServiceCaller;
     private final ProxyProperties.AuthRequestConfig authRequestConfig;
     private final Map<String, String> securityConfig;
     
     public JwtAuthService(
         ProxyProperties proxyProperties,
-        AuthClient authClient,
+        AuthServiceCaller authServiceCaller,
         ProxyProperties.AuthRequestConfig authRequestConfig,
         Map<String, String> securityConfig) {
         this.proxyProperties = proxyProperties;
-        this.authClient = authClient;
+        this.authServiceCaller = authServiceCaller;
         this.authRequestConfig = authRequestConfig;
         this.securityConfig = securityConfig == null ? Map.of() : Map.copyOf(securityConfig);
     }
@@ -102,7 +101,6 @@ public class JwtAuthService implements AuthService {
      */
     private Optional<AuthTokens> retrieveTokens(String sessionId) {
         try {
-            // Call auth service using REST client
             log.debug(
                 "Calling auth service with sessionId: {} and sparteGvo={}, btx={}, pss={}",
                 sessionId,
@@ -117,8 +115,12 @@ public class JwtAuthService implements AuthService {
                     authRequestConfig.btx(),
                     authRequestConfig.pss()
                 );
-            
-            AuthTokens tokens = authClient.getTokens(sessionId, authRequest);
+
+            AuthTokens tokens = authServiceCaller.postJson(
+                "/auth/tokens/" + encodePathSegment(sessionId),
+                authRequest,
+                AuthTokens.class
+            );
             
             if (tokens != null) {
                 if (tokens.getGlueToken() == null &&
@@ -131,34 +133,12 @@ public class JwtAuthService implements AuthService {
             }
             
             throw new AuthServiceException("Auth service returned null response");
-            
-        } catch (WebApplicationException e) {
-            throw new AuthServiceException(describeAuthServiceFailure(e), e);
         } catch (Exception e) {
+            if (e instanceof AuthServiceException authServiceException) {
+                throw authServiceException;
+            }
             throw new AuthServiceException("Error retrieving tokens from auth service", e);
         }
-    }
-
-    private String describeAuthServiceFailure(WebApplicationException exception) {
-        Response response = exception.getResponse();
-        if (response == null) {
-            return "Auth service request failed without a response";
-        }
-
-        String responseBody = null;
-        try {
-            if (response.hasEntity()) {
-                responseBody = response.readEntity(String.class);
-            }
-        } catch (Exception ignored) {
-            // Keep the status code even if the response body cannot be read.
-        }
-
-        if (responseBody == null || responseBody.isBlank()) {
-            return "Auth service returned HTTP %d".formatted(response.getStatus());
-        }
-
-        return "Auth service returned HTTP %d: %s".formatted(response.getStatus(), responseBody);
     }
 
     private void applyConfiguredHeaders(AuthTokens tokens, Map<String, String> headers) {
@@ -222,5 +202,9 @@ public class JwtAuthService implements AuthService {
                 Optional.ofNullable(tokens.getCustomerAccessToken());
             default -> Optional.empty();
         };
+    }
+
+    private String encodePathSegment(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 }

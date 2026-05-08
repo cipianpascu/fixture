@@ -1,17 +1,12 @@
 package com.agent.gateway.proxy.service.auth;
 
-import com.agent.gateway.proxy.client.AuthClient;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
-import com.agent.gateway.proxy.service.TlsContextFactory;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import org.eclipse.microprofile.rest.client.RestClientBuilder;
 
-import java.net.URI;
-import java.util.concurrent.TimeUnit;
 import java.util.Map;
 
 /**
@@ -25,50 +20,10 @@ public class AuthServiceFactory {
     ProxyProperties proxyProperties;
 
     @Inject
-    TlsContextFactory tlsContextFactory;
+    AuthServiceCaller authServiceCaller;
 
     @Inject
     CloudRunIdTokenProvider cloudRunIdTokenProvider;
-    
-    private AuthClient authClient;
-    
-    /**
-     * Get or create auth client lazily using configured service URL
-     */
-    private AuthClient getAuthClient() {
-        if (authClient == null) {
-            String serviceUrl = proxyProperties.auth().serviceUrl();
-            log.debug("Creating AuthClient with base URL: {}", serviceUrl);
-            RestClientBuilder builder = RestClientBuilder.newBuilder()
-                .baseUri(URI.create(serviceUrl))
-                .connectTimeout(proxyProperties.auth().timeout().toMillis(), TimeUnit.MILLISECONDS)
-                .readTimeout(proxyProperties.auth().timeout().toMillis(), TimeUnit.MILLISECONDS);
-            tlsContextFactory.createAuthSslContext().ifPresent(builder::sslContext);
-            configureAuthServiceSecurity(builder, serviceUrl);
-            authClient = builder.build(AuthClient.class);
-        }
-        return authClient;
-    }
-
-    private void configureAuthServiceSecurity(RestClientBuilder builder, String serviceUrl) {
-        String authSecurityType = proxyProperties.auth().securityType().orElse("none");
-        if (authSecurityType.isBlank() || "none".equalsIgnoreCase(authSecurityType)) {
-            return;
-        }
-
-        if ("cloudrun".equalsIgnoreCase(authSecurityType) || "cloud_run".equalsIgnoreCase(authSecurityType)) {
-            String audience = CloudRunAudienceResolver.resolveAudience(
-                serviceUrl,
-                proxyProperties.auth().securityConfig(),
-                "auth service"
-            );
-            builder.register(new CloudRunAuthRequestFilter(cloudRunIdTokenProvider, audience));
-            return;
-        }
-
-        throw new ProxyConfigurationException(
-            "Unsupported auth.security-type '%s'".formatted(authSecurityType));
-    }
     
     /**
      * Create auth service for a backend
@@ -108,7 +63,7 @@ public class AuthServiceFactory {
             authRequestConfig.pss());
         return new JwtAuthService(
             proxyProperties, 
-            getAuthClient(),  // Use lazy-initialized client
+            authServiceCaller,
             authRequestConfig,
             backend.securityConfig()
         );
@@ -145,8 +100,7 @@ public class AuthServiceFactory {
         log.debug("Creating transaction-id auth service for backend: {}", backend.name());
         return new TransactionIdAuthService(
             proxyProperties,
-            tlsContextFactory,
-            cloudRunIdTokenProvider,
+            authServiceCaller,
             backend.securityConfig()
         );
     }
@@ -154,7 +108,7 @@ public class AuthServiceFactory {
     /**
      * No-op auth service (does nothing)
      */
-        private static class NoOpAuthService implements AuthService {
+    private static class NoOpAuthService implements AuthService {
         @Override
         public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody) {
             // Do nothing

@@ -5,46 +5,26 @@ import com.agent.gateway.proxy.exception.AuthServiceException;
 import com.agent.gateway.proxy.exception.AuthenticationRequiredException;
 import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
-import com.agent.gateway.proxy.service.TlsContextFactory;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 
 @Slf4j
 public class TransactionIdAuthService implements AuthService {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
     private final ProxyProperties proxyProperties;
-    private final CloudRunIdTokenProvider cloudRunIdTokenProvider;
+    private final AuthServiceCaller authServiceCaller;
     private final Map<String, String> securityConfig;
-    private final HttpClient authHttpClient;
-    private final String authUrl;
-    private final String cloudRunAudience;
 
     public TransactionIdAuthService(
         ProxyProperties proxyProperties,
-        TlsContextFactory tlsContextFactory,
-        CloudRunIdTokenProvider cloudRunIdTokenProvider,
+        AuthServiceCaller authServiceCaller,
         Map<String, String> securityConfig) {
         this.proxyProperties = proxyProperties;
-        this.cloudRunIdTokenProvider = cloudRunIdTokenProvider;
+        this.authServiceCaller = authServiceCaller;
         this.securityConfig = securityConfig == null ? Map.of() : Map.copyOf(securityConfig);
-        HttpClient.Builder builder = HttpClient.newBuilder()
-            .connectTimeout(proxyProperties.auth().timeout());
-        tlsContextFactory.createAuthSslContext().ifPresent(builder::sslContext);
-        this.authHttpClient = builder.build();
-        this.authUrl = buildAuthUrl(proxyProperties.auth().serviceUrl(), this.securityConfig);
-        this.cloudRunAudience = resolveCloudRunAudience();
     }
 
     @Override
@@ -105,34 +85,7 @@ public class TransactionIdAuthService implements AuthService {
     }
 
     private JsonNode callAuthService(Map<String, Object> authRequestBody) {
-        try {
-            String requestJson = OBJECT_MAPPER.writeValueAsString(authRequestBody);
-            HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(authUrl))
-                .timeout(proxyProperties.auth().timeout())
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(requestJson));
-
-            if (cloudRunAudience != null) {
-                builder.header("X-Serverless-Authorization", "Bearer " + cloudRunIdTokenProvider.getIdToken(cloudRunAudience));
-            }
-
-            HttpResponse<String> response = authHttpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                String suffix = response.body() == null || response.body().isBlank() ? "" : ": " + response.body();
-                throw new AuthServiceException("Auth service returned HTTP %d%s".formatted(response.statusCode(), suffix));
-            }
-
-            return OBJECT_MAPPER.readTree(response.body());
-        } catch (AuthServiceException e) {
-            throw e;
-        } catch (IOException e) {
-            throw new AuthServiceException("Failed to call auth service for transaction ID", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AuthServiceException("Auth service transaction-id request was interrupted", e);
-        }
+        return authServiceCaller.postJson(authPath(), authRequestBody, JsonNode.class);
     }
 
     private void applyConfiguredHeaders(JsonNode authResponse, Map<String, String> headers) {
@@ -162,34 +115,11 @@ public class TransactionIdAuthService implements AuthService {
         return values;
     }
 
-    private String buildAuthUrl(String serviceUrl, Map<String, String> config) {
-        String authPath = config.getOrDefault("auth-path", "/auth/transactions");
+    private String authPath() {
+        String authPath = securityConfig.getOrDefault("auth-path", "/auth/transactions");
         if (authPath.isBlank()) {
             throw new ProxyConfigurationException("transactionid auth-path must not be blank");
         }
-        if (authPath.startsWith("http://") || authPath.startsWith("https://")) {
-            return authPath;
-        }
-        boolean serviceEndsWithSlash = serviceUrl.endsWith("/");
-        boolean pathStartsWithSlash = authPath.startsWith("/");
-        if (serviceEndsWithSlash && pathStartsWithSlash) {
-            return serviceUrl.substring(0, serviceUrl.length() - 1) + authPath;
-        }
-        if (!serviceEndsWithSlash && !pathStartsWithSlash) {
-            return serviceUrl + "/" + authPath;
-        }
-        return serviceUrl + authPath;
-    }
-
-    private String resolveCloudRunAudience() {
-        String authSecurityType = proxyProperties.auth().securityType().orElse("none");
-        if ("cloudrun".equalsIgnoreCase(authSecurityType) || "cloud_run".equalsIgnoreCase(authSecurityType)) {
-            return CloudRunAudienceResolver.resolveAudience(
-                proxyProperties.auth().serviceUrl(),
-                proxyProperties.auth().securityConfig(),
-                "auth service"
-            );
-        }
-        return null;
+        return authPath;
     }
 }
