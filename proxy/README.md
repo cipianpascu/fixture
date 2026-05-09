@@ -247,6 +247,7 @@ gateway:
       securityConfig:
         bearer-source: auth_z_token
         token-headers.X-Glue-Token: glue_token
+```
 
 ### Apigee-style JWT backend
 
