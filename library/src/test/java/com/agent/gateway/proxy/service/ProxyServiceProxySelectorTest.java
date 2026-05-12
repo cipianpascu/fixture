@@ -7,6 +7,7 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.ProxySelector;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -58,7 +59,34 @@ class ProxyServiceProxySelectorTest {
         assertNotEquals(firstKey, secondKey);
     }
 
+    @Test
+    void clientKeyIncludesHttpVersion() {
+        String firstKey = ProxyService.clientKey(backend("orders", proxy("proxy.internal", 8080, List.of()), "http1_1"));
+        String secondKey = ProxyService.clientKey(backend("orders", proxy("proxy.internal", 8080, List.of()), "http2"));
+
+        assertNotEquals(firstKey, secondKey);
+    }
+
+    @Test
+    void resolvesConfiguredHttpVersion() {
+        assertEquals(
+            HttpClient.Version.HTTP_2,
+            ProxyService.resolveHttpVersion(backend("orders", proxy("proxy.internal", 8080, List.of()), "http2"))
+        );
+        assertEquals(
+            HttpClient.Version.HTTP_1_1,
+            ProxyService.resolveHttpVersion(backend("orders", proxy("proxy.internal", 8080, List.of()), "http/1.1"))
+        );
+    }
+
     private ProxyProperties.BackendDefinition backend(String name, ProxyProperties.ProxyConfig proxyConfig) {
+        return backend(name, proxyConfig, "http1_1");
+    }
+
+    private ProxyProperties.BackendDefinition backend(
+        String name,
+        ProxyProperties.ProxyConfig proxyConfig,
+        String httpVersion) {
         return new ProxyProperties.BackendDefinition() {
             @Override
             public String name() {
@@ -88,6 +116,11 @@ class ProxyServiceProxySelectorTest {
             @Override
             public boolean enabled() {
                 return true;
+            }
+
+            @Override
+            public String httpVersion() {
+                return httpVersion;
             }
 
             @Override

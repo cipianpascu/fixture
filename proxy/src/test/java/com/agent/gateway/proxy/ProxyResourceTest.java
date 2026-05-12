@@ -179,6 +179,17 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
     }
 
     @Test
+    void allowsJwtAuthRequestsWithOnlySomeConfiguredFields() {
+        given()
+            .header("X-Session-Id", "partial-auth-request-session")
+            .when()
+            .get("/api/v1/jwt-optional-auth-request-service/ping")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("jwt-optional-ok"));
+    }
+
+    @Test
     void mapsJwtTokensToApigeeStyleHeaders() {
         Response response = given()
             .header("X-Session-Id", "apigee-session")

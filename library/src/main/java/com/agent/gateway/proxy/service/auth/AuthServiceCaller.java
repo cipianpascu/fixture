@@ -38,7 +38,8 @@ public class AuthServiceCaller {
         this.cloudRunIdTokenProvider = cloudRunIdTokenProvider;
 
         HttpClient.Builder builder = HttpClient.newBuilder()
-            .connectTimeout(proxyProperties.auth().timeout());
+            .connectTimeout(proxyProperties.auth().timeout())
+            .version(HttpClient.Version.HTTP_1_1);
         tlsContextFactory.createAuthSslContext().ifPresent(builder::sslContext);
         this.httpClient = builder.build();
         this.cloudRunAudience = resolveCloudRunAudience();

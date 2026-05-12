@@ -227,7 +227,8 @@ public class ProxyService {
 
     private HttpClient buildHttpClient(ProxyProperties.BackendDefinition backend) {
         HttpClient.Builder builder = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(30));
+            .connectTimeout(Duration.ofSeconds(30))
+            .version(resolveHttpVersion(backend));
         tlsContextFactory.createBackendSslContext(backend).ifPresent(builder::sslContext);
         createProxySelector(backend).ifPresent(builder::proxy);
         return builder.build();
@@ -235,17 +236,33 @@ public class ProxyService {
 
     static String clientKey(ProxyProperties.BackendDefinition backend) {
         String tlsProfile = backend.tlsProfile().orElse("__default__");
+        String httpVersion = backend.httpVersion();
         String proxyKey = backend.proxy()
             .map(proxy -> "%s:%d:%s".formatted(
                 proxy.host(),
                 proxy.port(),
                 String.join(",", proxy.nonProxyHosts())))
             .orElse("__no_proxy__");
-        return tlsProfile + "|" + proxyKey;
+        return tlsProfile + "|" + httpVersion + "|" + proxyKey;
     }
 
     static Optional<ProxySelector> createProxySelector(ProxyProperties.BackendDefinition backend) {
         return backend.proxy().map(BackendProxySelector::new);
+    }
+
+    static HttpClient.Version resolveHttpVersion(ProxyProperties.BackendDefinition backend) {
+        String configured = backend.httpVersion();
+        if (configured == null || configured.isBlank()) {
+            return HttpClient.Version.HTTP_1_1;
+        }
+
+        String normalized = configured.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "http1_1", "http1.1", "http/1.1" -> HttpClient.Version.HTTP_1_1;
+            case "http2", "http_2", "http/2" -> HttpClient.Version.HTTP_2;
+            default -> throw new ProxyConfigurationException(
+                "Unsupported http-version '%s' for backend '%s'".formatted(configured, backend.name()));
+        };
     }
 
     private Set<String> blockedResponseHeaders(ProxyProperties.BackendDefinition backend) {

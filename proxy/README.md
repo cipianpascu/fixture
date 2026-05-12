@@ -107,6 +107,7 @@ gateway:
 - `schema`: OpenAPI schema filename under `schemas/`
 - `timeout`: request timeout for upstream call
 - `enabled`: whether the backend is routable
+- `http-version`: `http1_1` by default, optionally `http2` for known-good upstreams
 - `securityType`: `none`, `basic`, `jwt`, `form`, `transactionid`, or `cloudrun`
 - `securityConfig`: auth-specific key/value config
 - `auth-request`: structured request payload sent to the auth service for `jwt`
@@ -130,6 +131,8 @@ Notes:
 - backend proxy settings affect only calls from the proxy to that backend
 - they do not affect calls to `gateway.auth.service-url`
 - `non-proxy-hosts` supports exact hosts and `*.` suffix patterns
+- keep `http-version: http1_1` for plain `http://` upstreams
+- use `http-version: http2` only for upstreams that are known to support it correctly, typically over `https://`
 
 For `securityType: jwt`, `securityConfig` supports:
 
@@ -138,6 +141,14 @@ For `securityType: jwt`, `securityConfig` supports:
 - `bearer-prefix`: bearer prefix, defaults to `Bearer`
 - `token-headers.<Header-Name>`: maps an outbound header to one token field
 - `static-headers.<Header-Name>`: adds a fixed outbound header such as an API key
+
+For `securityType: jwt`, `auth-request` fields are independently optional:
+
+- `sparte-gvo`
+- `btx`
+- `pss`
+
+Only configure the lists required by the target auth flow. Omitted fields are not sent to the auth service.
 
 For `securityType: transactionid`, `securityConfig` supports:
 

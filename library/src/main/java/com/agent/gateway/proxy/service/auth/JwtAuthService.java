@@ -53,9 +53,9 @@ public class JwtAuthService implements AuthService {
         log.debug(
             "Found sessionId: {}, requesting sparteGvo={}, btx={}, pss={}",
             sessionId.get(),
-            authRequestConfig.sparteGvo(),
-            authRequestConfig.btx(),
-            authRequestConfig.pss()
+            authRequestConfig.sparteGvo().orElse(null),
+            authRequestConfig.btx().orElse(null),
+            authRequestConfig.pss().orElse(null)
         );
         
         // Call auth service to get tokens
@@ -104,16 +104,16 @@ public class JwtAuthService implements AuthService {
             log.debug(
                 "Calling auth service with sessionId: {} and sparteGvo={}, btx={}, pss={}",
                 sessionId,
-                authRequestConfig.sparteGvo(),
-                authRequestConfig.btx(),
-                authRequestConfig.pss()
+                authRequestConfig.sparteGvo().orElse(null),
+                authRequestConfig.btx().orElse(null),
+                authRequestConfig.pss().orElse(null)
             );
             
             com.agent.gateway.proxy.auth.AuthRequest authRequest = 
                 new com.agent.gateway.proxy.auth.AuthRequest(
-                    authRequestConfig.sparteGvo(),
-                    authRequestConfig.btx(),
-                    authRequestConfig.pss()
+                    authRequestConfig.sparteGvo().orElse(null),
+                    authRequestConfig.btx().orElse(null),
+                    authRequestConfig.pss().orElse(null)
                 );
 
             AuthTokens tokens = authServiceCaller.postJson(

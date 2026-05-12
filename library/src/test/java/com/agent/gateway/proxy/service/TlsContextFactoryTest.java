@@ -182,6 +182,11 @@ class TlsContextFactoryTest {
             }
 
             @Override
+            public String httpVersion() {
+                return "http1_1";
+            }
+
+            @Override
             public Optional<String> securityType() {
                 return Optional.of("none");
             }

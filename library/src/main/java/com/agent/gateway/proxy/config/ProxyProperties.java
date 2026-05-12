@@ -80,11 +80,11 @@ public interface ProxyProperties {
 
     interface AuthRequestConfig {
         @WithName("sparte-gvo")
-        List<String> sparteGvo();
+        Optional<List<String>> sparteGvo();
 
-        List<String> btx();
+        Optional<List<String>> btx();
 
-        List<String> pss();
+        Optional<List<String>> pss();
     }
     
     interface BackendDefinition {
@@ -102,6 +102,10 @@ public interface ProxyProperties {
         
         @WithDefault("true")
         boolean enabled();
+
+        @WithName("http-version")
+        @WithDefault("http1_1")
+        String httpVersion();
         
         @WithName("securityType")
         Optional<String> securityType();

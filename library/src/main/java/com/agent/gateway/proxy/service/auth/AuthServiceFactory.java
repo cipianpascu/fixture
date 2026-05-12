@@ -59,9 +59,9 @@ public class AuthServiceFactory {
                 "JWT auth configured but auth-request missing for backend '%s'".formatted(backend.name())));
         log.debug("Creating JWT auth service for backend: {} with auth-request: sparteGvo={}, btx={}, pss={}",
             backend.name(),
-            authRequestConfig.sparteGvo(),
-            authRequestConfig.btx(),
-            authRequestConfig.pss());
+            authRequestConfig.sparteGvo().orElse(null),
+            authRequestConfig.btx().orElse(null),
+            authRequestConfig.pss().orElse(null));
         return new JwtAuthService(
             proxyProperties, 
             authServiceCaller,

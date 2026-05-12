@@ -102,6 +102,7 @@ gateway:
       schema: example-service.yaml
       timeout: 30s
       enabled: true
+      http-version: http1_1
       securityType: jwt
       # proxy:
       #   host: corp-proxy.internal
@@ -119,6 +120,7 @@ gateway:
           - FirstFunction
         pss:
           - SecondFunction
+      # Any of the auth-request fields above can be omitted when not needed.
       # securityConfig:
       #   bearer-source: customer_access_token
       #   static-headers.x-api-key: ${APIGEE_API_KEY}
@@ -198,6 +200,7 @@ gateway:
     #   schema: orders-service.yaml
     #   timeout: 30s
     #   enabled: true
+    #   http-version: http2
     #   securityType: cloudrun
     #   securityConfig:
     #     audience: https://orders-service-abcde-ew.a.run.app/
