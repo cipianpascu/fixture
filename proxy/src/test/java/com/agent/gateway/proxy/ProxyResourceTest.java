@@ -213,6 +213,51 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
     }
 
     @Test
+    void mapsFormEncodedAuthParametersIntoBackendHeaders() {
+        int authCallsBefore = ProxyTestResource.getFormAuthCalls();
+        Response response = given()
+            .header("Client-Id", "appointments-client")
+            .cookie("clientSecret", "cookie-secret")
+            .when()
+            .get("/api/v1/form-service/ping")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("form-ok"))
+            .extract()
+            .response();
+
+        assertEquals("Bearer form-access-token", ProxyTestResource.getLastFormAuthorization());
+        assertEquals("tenant-42", ProxyTestResource.getLastFormTenantToken());
+        assertEquals(authCallsBefore + 1, ProxyTestResource.getFormAuthCalls());
+        assertNull(response.getHeader("Authorization"));
+        assertNull(response.getHeader("X-Tenant-Token"));
+    }
+
+    @Test
+    void mergesInlineFormAuthParametersIntoTheBackendRequestBodyWithoutCallingAuthService() {
+        int authCallsBefore = ProxyTestResource.getFormAuthCalls();
+
+        given()
+            .contentType("application/x-www-form-urlencoded")
+            .header("Client-Id", "appointments-client")
+            .cookie("clientSecret", "cookie-secret")
+            .body("payload=hello")
+            .when()
+            .post("/api/v1/form-inline-service/submit")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("inline-form-ok"));
+
+        String outboundBody = ProxyTestResource.getLastInlineFormBody();
+        org.junit.jupiter.api.Assertions.assertNotNull(outboundBody);
+        org.junit.jupiter.api.Assertions.assertTrue(outboundBody.contains("payload=hello"));
+        org.junit.jupiter.api.Assertions.assertTrue(outboundBody.contains("grant_type=client_credentials"));
+        org.junit.jupiter.api.Assertions.assertTrue(outboundBody.contains("client_id=appointments-client"));
+        org.junit.jupiter.api.Assertions.assertTrue(outboundBody.contains("client_secret=cookie-secret"));
+        assertEquals(authCallsBefore, ProxyTestResource.getFormAuthCalls());
+    }
+
+    @Test
     void mapsJwtTokensToGlueStyleHeaders() {
         Response response = given()
             .header("X-Session-Id", "glue-session")

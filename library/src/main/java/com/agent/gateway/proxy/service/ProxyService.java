@@ -18,6 +18,8 @@ import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.exceptions.CircuitBreakerOpenException;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -29,6 +31,9 @@ import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.Map;
+import java.util.Objects;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Proxy Service - Lightweight Request Forwarding (Quarkus)
@@ -101,6 +106,7 @@ public class ProxyService {
             // Get appropriate auth service for this backend and enrich headers
             AuthService authService = authServiceFactory.createAuthService(backend);
             authService.enrichHeaders(request, headers, requestBody);
+            String outboundRequestBody = authService.transformRequestBody(request, headers, requestBody);
             
             // Build HTTP request
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
@@ -111,8 +117,8 @@ public class ProxyService {
             headers.forEach(requestBuilder::header);
             
             // Set method and body
-            HttpRequest.BodyPublisher bodyPublisher = requestBody != null && !requestBody.isEmpty()
-                ? HttpRequest.BodyPublishers.ofString(requestBody)
+            HttpRequest.BodyPublisher bodyPublisher = outboundRequestBody != null && !outboundRequestBody.isEmpty()
+                ? HttpRequest.BodyPublishers.ofString(outboundRequestBody)
                 : HttpRequest.BodyPublishers.noBody();
             
             requestBuilder.method(request.method(), bodyPublisher);
@@ -215,7 +221,7 @@ public class ProxyService {
     }
 
     private HttpClient getHttpClient(ProxyProperties.BackendDefinition backend) {
-        String clientKey = backend.tlsProfile().orElse("__default__");
+        String clientKey = clientKey(backend);
         return httpClients.computeIfAbsent(clientKey, ignored -> buildHttpClient(backend));
     }
 
@@ -223,7 +229,23 @@ public class ProxyService {
         HttpClient.Builder builder = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30));
         tlsContextFactory.createBackendSslContext(backend).ifPresent(builder::sslContext);
+        createProxySelector(backend).ifPresent(builder::proxy);
         return builder.build();
+    }
+
+    static String clientKey(ProxyProperties.BackendDefinition backend) {
+        String tlsProfile = backend.tlsProfile().orElse("__default__");
+        String proxyKey = backend.proxy()
+            .map(proxy -> "%s:%d:%s".formatted(
+                proxy.host(),
+                proxy.port(),
+                String.join(",", proxy.nonProxyHosts())))
+            .orElse("__no_proxy__");
+        return tlsProfile + "|" + proxyKey;
+    }
+
+    static Optional<ProxySelector> createProxySelector(ProxyProperties.BackendDefinition backend) {
+        return backend.proxy().map(BackendProxySelector::new);
     }
 
     private Set<String> blockedResponseHeaders(ProxyProperties.BackendDefinition backend) {
@@ -256,5 +278,57 @@ public class ProxyService {
         });
 
         return blocked;
+    }
+
+    static final class BackendProxySelector extends ProxySelector {
+
+        private final ProxyProperties.ProxyConfig proxyConfig;
+        private final java.net.Proxy proxy;
+
+        BackendProxySelector(ProxyProperties.ProxyConfig proxyConfig) {
+            this.proxyConfig = Objects.requireNonNull(proxyConfig, "proxyConfig");
+            this.proxy = new java.net.Proxy(
+                java.net.Proxy.Type.HTTP,
+                InetSocketAddress.createUnresolved(proxyConfig.host(), proxyConfig.port())
+            );
+        }
+
+        @Override
+        public List<java.net.Proxy> select(URI uri) {
+            if (uri == null) {
+                throw new IllegalArgumentException("URI must not be null");
+            }
+            String host = uri.getHost();
+            if (host != null && isNonProxyHost(host)) {
+                return List.of(java.net.Proxy.NO_PROXY);
+            }
+            return List.of(proxy);
+        }
+
+        @Override
+        public void connectFailed(URI uri, java.net.SocketAddress sa, IOException ioe) {
+            log.warn("Proxy connection failed for backend target {} via {}", uri, sa, ioe);
+        }
+
+        private boolean isNonProxyHost(String host) {
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
+            for (String configuredHost : proxyConfig.nonProxyHosts()) {
+                if (configuredHost == null || configuredHost.isBlank()) {
+                    continue;
+                }
+                String normalizedPattern = configuredHost.toLowerCase(Locale.ROOT).trim();
+                if (normalizedPattern.startsWith("*.")) {
+                    String suffix = normalizedPattern.substring(1);
+                    if (normalizedHost.endsWith(suffix)) {
+                        return true;
+                    }
+                    continue;
+                }
+                if (normalizedHost.equals(normalizedPattern)) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 }

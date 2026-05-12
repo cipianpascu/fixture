@@ -29,6 +29,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
     private static final AtomicReference<String> LAST_GLUE_AUTHORIZATION = new AtomicReference<>();
     private static final AtomicReference<String> LAST_GLUE_TOKEN = new AtomicReference<>();
     private static final AtomicReference<String> LAST_TRANSACTION_REQUEST_ID = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_FORM_AUTHORIZATION = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_FORM_TENANT_TOKEN = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_INLINE_FORM_BODY = new AtomicReference<>();
+    private static final AtomicInteger FORM_AUTH_CALLS = new AtomicInteger();
     private static final AtomicInteger ORDER_DETAILS_CALLS = new AtomicInteger();
     private static final AtomicInteger PAYMENT_ORDER_CALLS = new AtomicInteger();
 
@@ -48,6 +52,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         LAST_GLUE_AUTHORIZATION.set(null);
         LAST_GLUE_TOKEN.set(null);
         LAST_TRANSACTION_REQUEST_ID.set(null);
+        LAST_FORM_AUTHORIZATION.set(null);
+        LAST_FORM_TENANT_TOKEN.set(null);
+        LAST_INLINE_FORM_BODY.set(null);
+        FORM_AUTH_CALLS.set(0);
         ORDER_DETAILS_CALLS.set(0);
         PAYMENT_ORDER_CALLS.set(0);
         registerBackendHandlers();
@@ -181,6 +189,32 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[12].securityConfig.request-body.processId", "header:Process-Id");
         config.put("gateway.backends[12].securityConfig.response-headers.x-request-id", "transactionId");
 
+        config.put("gateway.backends[13].name", "form-service");
+        config.put("gateway.backends[13].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[13].path", "/form-auth");
+        config.put("gateway.backends[13].schema", "secondary-service.yaml");
+        config.put("gateway.backends[13].enabled", "true");
+        config.put("gateway.backends[13].securityType", "form");
+        config.put("gateway.backends[13].securityConfig.auth-path", "/auth/form");
+        config.put("gateway.backends[13].securityConfig.form-params.grant_type", "literal:client_credentials");
+        config.put("gateway.backends[13].securityConfig.form-params.client_id", "header:Client-Id");
+        config.put("gateway.backends[13].securityConfig.form-params.client_secret", "cookie:clientSecret");
+        config.put("gateway.backends[13].securityConfig.form-params.scope", "literal:appointments.read");
+        config.put("gateway.backends[13].securityConfig.response-headers.Authorization", "access_token");
+        config.put("gateway.backends[13].securityConfig.response-header-prefixes.Authorization", "Bearer");
+        config.put("gateway.backends[13].securityConfig.response-headers.X-Tenant-Token", "tenant_token");
+
+        config.put("gateway.backends[14].name", "form-inline-service");
+        config.put("gateway.backends[14].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[14].path", "/form-inline");
+        config.put("gateway.backends[14].schema", "form-inline-service.yaml");
+        config.put("gateway.backends[14].enabled", "true");
+        config.put("gateway.backends[14].securityType", "form");
+        config.put("gateway.backends[14].securityConfig.mode", "inline");
+        config.put("gateway.backends[14].securityConfig.form-params.grant_type", "literal:client_credentials");
+        config.put("gateway.backends[14].securityConfig.form-params.client_id", "header:Client-Id");
+        config.put("gateway.backends[14].securityConfig.form-params.client_secret", "cookie:clientSecret");
+
         config.put("gateway.resources.order-summary.schema", "order-summary.yaml");
         config.put("gateway.resources.order-summary.orders-backend", "orders-service");
         config.put("gateway.resources.order-summary.orders-path-template", "/details/{id}");
@@ -228,6 +262,22 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         return LAST_TRANSACTION_REQUEST_ID.get();
     }
 
+    public static String getLastFormAuthorization() {
+        return LAST_FORM_AUTHORIZATION.get();
+    }
+
+    public static String getLastFormTenantToken() {
+        return LAST_FORM_TENANT_TOKEN.get();
+    }
+
+    public static String getLastInlineFormBody() {
+        return LAST_INLINE_FORM_BODY.get();
+    }
+
+    public static int getFormAuthCalls() {
+        return FORM_AUTH_CALLS.get();
+    }
+
     public static int getOrderDetailsCalls() {
         return ORDER_DETAILS_CALLS.get();
     }
@@ -265,6 +315,17 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         backendServer.createContext("/tx/appointments", exchange -> {
             LAST_TRANSACTION_REQUEST_ID.set(exchange.getRequestHeaders().getFirst("x-request-id"));
             respond(exchange, 200, "{\"status\":\"tx-ok\",\"internal\":\"discard-me\"}");
+        });
+        backendServer.createContext("/form-auth/ping", exchange -> {
+            LAST_FORM_AUTHORIZATION.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            LAST_FORM_TENANT_TOKEN.set(exchange.getRequestHeaders().getFirst("X-Tenant-Token"));
+            exchange.getResponseHeaders().add("Authorization", "Bearer should-not-leak");
+            exchange.getResponseHeaders().add("X-Tenant-Token", "should-not-leak");
+            respond(exchange, 200, "{\"status\":\"form-ok\",\"internal\":\"discard-me\"}");
+        });
+        backendServer.createContext("/form-inline/submit", exchange -> {
+            LAST_INLINE_FORM_BODY.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, 200, "{\"status\":\"inline-form-ok\",\"internal\":\"discard-me\"}");
         });
         backendServer.createContext("/orders/details/123", exchange -> {
             ORDER_DETAILS_CALLS.incrementAndGet();
@@ -348,6 +409,29 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             }
             respond(exchange, 200, "{\"transactionId\":\"tx-" + processId + "\"}");
         });
+
+        authServer.createContext("/auth/form", exchange -> {
+            FORM_AUTH_CALLS.incrementAndGet();
+            String serverlessAuthorization = exchange.getRequestHeaders().getFirst("X-Serverless-Authorization");
+            if (proxyCloudRunAuthMissing(serverlessAuthorization)) {
+                respond(exchange, 401, "{\"error\":\"missing cloud run auth\"}");
+                return;
+            }
+            String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+            if (contentType == null || !contentType.startsWith("application/x-www-form-urlencoded")) {
+                respond(exchange, 400, "{\"error\":\"wrong content type\"}");
+                return;
+            }
+            Map<String, String> form = parseFormBody(exchange);
+            if (!"client_credentials".equals(form.get("grant_type"))
+                || !"appointments-client".equals(form.get("client_id"))
+                || !"cookie-secret".equals(form.get("client_secret"))
+                || !"appointments.read".equals(form.get("scope"))) {
+                respond(exchange, 400, "{\"error\":\"unexpected form payload\"}");
+                return;
+            }
+            respond(exchange, 200, "{\"access_token\":\"form-access-token\",\"tenant_token\":\"tenant-42\"}");
+        });
     }
 
     private boolean proxyCloudRunAuthMissing(String serverlessAuthorization) {
@@ -371,5 +455,22 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         } finally {
             exchange.close();
         }
+    }
+
+    private Map<String, String> parseFormBody(HttpExchange exchange) throws IOException {
+        String rawBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String pair : rawBody.split("&")) {
+            if (pair.isBlank()) {
+                continue;
+            }
+            String[] parts = pair.split("=", 2);
+            String key = java.net.URLDecoder.decode(parts[0], StandardCharsets.UTF_8);
+            String value = parts.length > 1
+                ? java.net.URLDecoder.decode(parts[1], StandardCharsets.UTF_8)
+                : "";
+            values.put(key, value);
+        }
+        return values;
     }
 }

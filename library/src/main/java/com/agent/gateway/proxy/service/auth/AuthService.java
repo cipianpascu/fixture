@@ -18,4 +18,15 @@ public interface AuthService {
      * @param headers The headers to enrich (will be modified in place)
      */
     void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody);
+
+    /**
+     * Optionally transform the outbound request body after auth headers are prepared.
+     * Implementations that do not need to modify the body should return it unchanged.
+     */
+    default String transformRequestBody(
+        ProxyRequestContext request,
+        Map<String, String> headers,
+        String requestBody) {
+        return requestBody;
+    }
 }

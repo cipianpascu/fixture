@@ -39,6 +39,7 @@ public class AuthServiceFactory {
         return switch (authType.toLowerCase()) {
             case "jwt" -> createJwtAuthService(backend);
             case "basic", "basic_auth" -> createBasicAuthService(backend);
+            case "form" -> createFormAuthService(backend);
             case "transactionid", "transaction_id" -> createTransactionIdAuthService(backend);
             case "cloudrun", "cloud_run" -> createCloudRunAuthService(backend);
             case "none" -> new NoOpAuthService();
@@ -99,6 +100,15 @@ public class AuthServiceFactory {
     private AuthService createTransactionIdAuthService(ProxyProperties.BackendDefinition backend) {
         log.debug("Creating transaction-id auth service for backend: {}", backend.name());
         return new TransactionIdAuthService(
+            proxyProperties,
+            authServiceCaller,
+            backend.securityConfig()
+        );
+    }
+
+    private AuthService createFormAuthService(ProxyProperties.BackendDefinition backend) {
+        log.debug("Creating form auth service for backend: {}", backend.name());
+        return new FormAuthService(
             proxyProperties,
             authServiceCaller,
             backend.securityConfig()

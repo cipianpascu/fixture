@@ -35,7 +35,7 @@ public class ProxyResource extends BaseResource {
 
     @Path("/{backendName}/{path:.*}")
     @POST
-    @Consumes(MediaType.APPLICATION_JSON)
+    @Consumes({MediaType.APPLICATION_JSON, MediaType.APPLICATION_FORM_URLENCODED, MediaType.WILDCARD})
     @Produces(MediaType.APPLICATION_JSON)
     public Response proxyPost(
             @PathParam("backendName") String backendName,
@@ -49,7 +49,7 @@ public class ProxyResource extends BaseResource {
 
     @Path("/{backendName}/{path:.*}")
     @PUT
-    @Consumes(MediaType.APPLICATION_JSON)
+    @Consumes({MediaType.APPLICATION_JSON, MediaType.APPLICATION_FORM_URLENCODED, MediaType.WILDCARD})
     @Produces(MediaType.APPLICATION_JSON)
     public Response proxyPut(
             @PathParam("backendName") String backendName,
@@ -75,7 +75,7 @@ public class ProxyResource extends BaseResource {
 
     @Path("/{backendName}/{path:.*}")
     @PATCH
-    @Consumes(MediaType.APPLICATION_JSON)
+    @Consumes({MediaType.APPLICATION_JSON, MediaType.APPLICATION_FORM_URLENCODED, MediaType.WILDCARD})
     @Produces(MediaType.APPLICATION_JSON)
     public Response proxyPatch(
             @PathParam("backendName") String backendName,

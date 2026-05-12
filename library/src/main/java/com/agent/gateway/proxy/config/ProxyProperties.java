@@ -114,6 +114,18 @@ public interface ProxyProperties {
 
         @WithName("tls-profile")
         Optional<String> tlsProfile();
+
+        Optional<ProxyConfig> proxy();
+    }
+
+    interface ProxyConfig {
+        String host();
+
+        int port();
+
+        @WithName("non-proxy-hosts")
+        @WithDefault("")
+        List<String> nonProxyHosts();
     }
 
     interface TlsConfig {

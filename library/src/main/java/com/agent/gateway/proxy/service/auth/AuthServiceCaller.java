@@ -11,9 +11,13 @@ import jakarta.inject.Inject;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class AuthServiceCaller {
@@ -43,12 +47,39 @@ public class AuthServiceCaller {
     public <T> T postJson(String pathOrUrl, Object requestBody, Class<T> responseType) {
         try {
             String requestJson = OBJECT_MAPPER.writeValueAsString(requestBody);
+            return send(
+                pathOrUrl,
+                requestJson,
+                "application/json",
+                responseType
+            );
+        } catch (AuthServiceException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new AuthServiceException("Failed to call auth service", e);
+        }
+    }
+
+    public <T> T postForm(String pathOrUrl, Map<String, String> parameters, Class<T> responseType) {
+        String formBody = parameters.entrySet().stream()
+            .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
+            .collect(Collectors.joining("&"));
+        return send(
+            pathOrUrl,
+            formBody,
+            "application/x-www-form-urlencoded",
+            responseType
+        );
+    }
+
+    private <T> T send(String pathOrUrl, String body, String contentType, Class<T> responseType) {
+        try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(resolveUrl(pathOrUrl)))
                 .timeout(proxyProperties.auth().timeout())
                 .header("Accept", "application/json")
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(requestJson));
+                .header("Content-Type", contentType)
+                .POST(HttpRequest.BodyPublishers.ofString(body));
 
             if (cloudRunAudience != null) {
                 builder.header(
@@ -127,5 +158,9 @@ public class AuthServiceCaller {
             return "Auth service returned HTTP %d".formatted(response.statusCode());
         }
         return "Auth service returned HTTP %d: %s".formatted(response.statusCode(), responseBody);
+    }
+
+    private String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }

@@ -103,6 +103,13 @@ gateway:
       timeout: 30s
       enabled: true
       securityType: jwt
+      # proxy:
+      #   host: corp-proxy.internal
+      #   port: 8080
+      #   non-proxy-hosts:
+      #     - localhost
+      #     - 127.0.0.1
+      #     - "*.svc.cluster.local"
       # tls-profile: internal-ca
       auth-request:
         sparte-gvo:
@@ -135,6 +142,41 @@ gateway:
     #   securityConfig:
     #     bearer-source: auth_z_token
     #     token-headers.X-Glue-Token: glue_token
+
+    # Example: Form-encoded auth-service request
+    # - name: form-service
+    #   baseUrl: http://localhost:9008
+    #   path: /api/v1/form
+    #   schema: form-service.yaml
+    #   timeout: 30s
+    #   enabled: true
+    #   securityType: form
+    #   securityConfig:
+    #     mode: auth-service
+    #     auth-path: /auth/form
+    #     form-params.grant_type: literal:client_credentials
+    #     form-params.client_id: header:Client-Id
+    #     form-params.client_secret: cookie:clientSecret
+    #     form-params.scope: literal:appointments.read
+    #     response-headers.Authorization: access_token
+    #     response-header-prefixes.Authorization: Bearer
+    #     response-headers.X-Tenant-Token: tenant_token
+
+    # Example: Inline form auth on the actual backend request
+    # - name: form-inline-service
+    #   baseUrl: http://localhost:9009
+    #   path: /api/v1/form-inline
+    #   schema: form-inline-service.yaml
+    #   timeout: 30s
+    #   enabled: true
+    #   securityType: form
+    #   securityConfig:
+    #     mode: inline
+    #     form-params.grant_type: literal:client_credentials
+    #     form-params.client_id: header:Client-Id
+    #     form-params.client_secret: cookie:clientSecret
+    #   # Requests to this backend must use:
+    #   # Content-Type: application/x-www-form-urlencoded
       
     # Example: Basic authentication
     # - name: legacy-service

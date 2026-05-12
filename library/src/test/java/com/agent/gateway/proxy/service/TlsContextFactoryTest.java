@@ -200,6 +200,11 @@ class TlsContextFactoryTest {
             public Optional<String> tlsProfile() {
                 return Optional.of(tlsProfile);
             }
+
+            @Override
+            public Optional<ProxyProperties.ProxyConfig> proxy() {
+                return Optional.empty();
+            }
         };
     }
 

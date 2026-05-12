@@ -35,6 +35,7 @@ Per backend, `securityType` can be:
 - `none`: no auth enrichment
 - `basic`: injects HTTP Basic credentials from `securityConfig.username/password`
 - `jwt`: calls the configured auth service and maps returned tokens to backend-specific headers
+- `form`: supports either a form-encoded auth-service pre-call or inline form parameter enrichment on the actual backend request
 - `transactionid`: builds an auth-service JSON body from incoming headers and maps returned fields to backend headers
 - `cloudrun`: generates a Google ID token and sends it as `X-Serverless-Authorization`
 
@@ -106,10 +107,29 @@ gateway:
 - `schema`: OpenAPI schema filename under `schemas/`
 - `timeout`: request timeout for upstream call
 - `enabled`: whether the backend is routable
-- `securityType`: `none`, `basic`, `jwt`, `transactionid`, or `cloudrun`
+- `securityType`: `none`, `basic`, `jwt`, `form`, `transactionid`, or `cloudrun`
 - `securityConfig`: auth-specific key/value config
 - `auth-request`: structured request payload sent to the auth service for `jwt`
 - `tls-profile`: optional outbound TLS profile name
+- `proxy`: optional outbound HTTP proxy for this backend only
+
+Backend proxy shape:
+
+```yaml
+proxy:
+  host: corp-proxy.internal
+  port: 8080
+  non-proxy-hosts:
+    - localhost
+    - 127.0.0.1
+    - "*.svc.cluster.local"
+```
+
+Notes:
+
+- backend proxy settings affect only calls from the proxy to that backend
+- they do not affect calls to `gateway.auth.service-url`
+- `non-proxy-hosts` supports exact hosts and `*.` suffix patterns
 
 For `securityType: jwt`, `securityConfig` supports:
 
@@ -126,6 +146,20 @@ For `securityType: transactionid`, `securityConfig` supports:
 - `response-headers.<Header-Name>`: maps an auth response field into an outbound backend header
 
 Supported `request-body.*` mapping sources:
+
+- `header:<Header-Name>`: read from an incoming request header
+- `cookie:<Cookie-Name>`: read from an incoming request cookie
+- `literal:<value>`: use a fixed literal value
+
+For `securityType: form`, `securityConfig` supports:
+
+- `mode`: `auth-service` (default) or `inline`
+- `auth-path`: auth-service path to call, defaults to `/auth/form`
+- `form-params.<field>`: maps a form parameter from an incoming source
+- `response-headers.<Header-Name>`: maps an auth response field into an outbound backend header
+- `response-header-prefixes.<Header-Name>`: optional prefix added before a mapped header value
+
+Supported `form-params.*` mapping sources:
 
 - `header:<Header-Name>`: read from an incoming request header
 - `cookie:<Cookie-Name>`: read from an incoming request cookie
@@ -293,6 +327,53 @@ gateway:
         request-body.processId: header:Process-Id
         response-headers.x-request-id: transactionId
 ```
+
+### Form Auth Example
+
+```yaml
+gateway:
+  backends:
+    - name: form-service
+      baseUrl: https://legacy.example.com
+      path: /api/v1/legacy
+      schema: legacy-service.yaml
+      securityType: form
+      securityConfig:
+        mode: auth-service
+        auth-path: /auth/form
+        form-params.grant_type: literal:client_credentials
+        form-params.client_id: header:Client-Id
+        form-params.client_secret: cookie:clientSecret
+        form-params.scope: literal:appointments.read
+        response-headers.Authorization: access_token
+        response-header-prefixes.Authorization: Bearer
+        response-headers.X-Tenant-Token: tenant_token
+```
+
+### Inline Form Auth Example
+
+Use this when the backend request itself must carry the form credentials, similar to `basic` auth using a single upstream request.
+
+```yaml
+gateway:
+  backends:
+    - name: form-inline-service
+      baseUrl: https://legacy.example.com
+      path: /api/v1/legacy
+      schema: legacy-form.yaml
+      securityType: form
+      securityConfig:
+        mode: inline
+        form-params.grant_type: literal:client_credentials
+        form-params.client_id: header:Client-Id
+        form-params.client_secret: cookie:clientSecret
+```
+
+Notes:
+- `inline` mode does not call the auth service
+- it merges configured `form-params.*` into the outbound backend request body
+- use it only with `application/x-www-form-urlencoded` backend requests
+- the incoming proxy request must also use `Content-Type: application/x-www-form-urlencoded`
 
 Behavior:
 
