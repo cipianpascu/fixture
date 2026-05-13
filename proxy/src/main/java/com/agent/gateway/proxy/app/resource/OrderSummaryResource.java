@@ -6,7 +6,6 @@ import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.resource.BaseResource;
 import com.agent.gateway.proxy.validation.ValidationResult;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -21,13 +20,12 @@ import jakarta.ws.rs.core.UriInfo;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
+import java.util.Optional;
 
 @Path("/api/v1/order-summaries")
 @ApplicationScoped
 @Slf4j
 public class OrderSummaryResource extends BaseResource {
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Inject
     OrderSummaryResourceConfig resourceConfig;
@@ -97,11 +95,19 @@ public class OrderSummaryResource extends BaseResource {
         }
 
         try {
-            JsonNode order = parseEntity(ordersResponse);
-            JsonNode payment = parseEntity(paymentsResponse);
+            Optional<JsonNode> order = parseSuccessfulJsonResponse(ordersResponse);
+            if (order.isEmpty()) {
+                return ordersResponse;
+            }
+
+            Optional<JsonNode> payment = parseSuccessfulJsonResponse(paymentsResponse);
+            if (payment.isEmpty()) {
+                return paymentsResponse;
+            }
+
             Response response = Response.ok(Map.of(
-                "order", order,
-                "payment", payment
+                "order", order.get(),
+                "payment", payment.get()
             )).type(MediaType.APPLICATION_JSON).build();
             return applyResponseContract(resourceConfig.schema(), contractPath, incomingRequest, response);
         } catch (Exception e) {
@@ -110,17 +116,6 @@ public class OrderSummaryResource extends BaseResource {
                 .entity(Map.of("error", "Failed to compose order summary response"))
                 .build();
         }
-    }
-
-    private JsonNode parseEntity(Response response) throws Exception {
-        Object entity = response.getEntity();
-        if (entity == null) {
-            return objectMapper.nullNode();
-        }
-        if (entity instanceof JsonNode jsonNode) {
-            return jsonNode;
-        }
-        return objectMapper.readTree(String.valueOf(entity));
     }
 
     private String backendProxyPath(String backendName, String downstreamPath) {

@@ -3,7 +3,6 @@ package com.agent.gateway.proxy.app.resource;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.resource.BaseResource;
-import com.agent.gateway.proxy.validation.ValidationResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -90,31 +89,9 @@ public class ProxyResource extends BaseResource {
     private Response proxy(String backendName, String requestBody, ProxyRequestContext requestContext) {
         log.info("Proxying request: {} {}", requestContext.method(), requestContext.requestUri());
 
-        ProxyProperties.BackendDefinition backend = findBackend(backendName);
-        if (backend == null) {
-            return backendNotFound(backendName);
-        }
-
-        if (!isBackendEnabled(backend)) {
-            return backendDisabled(backendName);
-        }
-
         String path = extractContractPath(requestContext.requestUri(), "/api/v1/" + backendName);
-
-        if (proxyProperties.schemas().validateRequests()) {
-            ValidationResult validation = validateContract(
-                backend.schema().orElse(null),
-                path,
-                requestContext,
-                requestBody
-            );
-
-            if (!validation.isValid()) {
-                return requestValidationFailed(requestContext, path, validation);
-            }
-        }
-
-        Response response = forward(backend, requestContext, requestBody);
-        return applyResponseContract(backend.schema().orElse(null), path, requestContext, response);
+        ProxyProperties.BackendDefinition backend = findBackend(backendName);
+        String schemaName = backend != null ? backend.schema().orElse(null) : null;
+        return defaultProxy(backendName, schemaName, path, requestContext, requestBody);
     }
 }

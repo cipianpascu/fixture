@@ -5,9 +5,12 @@ import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.service.ProxyService;
 import com.agent.gateway.proxy.service.SchemaValidationService;
 import com.agent.gateway.proxy.validation.ValidationResult;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import lombok.extern.slf4j.Slf4j;
@@ -15,9 +18,12 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 public abstract class BaseResource {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Inject
     protected SchemaValidationService validationService;
@@ -71,6 +77,73 @@ public abstract class BaseResource {
             contractPath,
             response
         );
+    }
+
+    protected Response defaultProxy(
+        String backendName,
+        String schemaName,
+        String contractPath,
+        ProxyRequestContext requestContext,
+        String requestBody) {
+        ProxyProperties.BackendDefinition backend = findBackend(backendName);
+        if (backend == null) {
+            return backendNotFound(backendName);
+        }
+
+        if (!isBackendEnabled(backend)) {
+            return backendDisabled(backendName);
+        }
+
+        if (proxyProperties.schemas().validateRequests()) {
+            ValidationResult validation = validateContract(
+                schemaName,
+                contractPath,
+                requestContext,
+                requestBody
+            );
+
+            if (!validation.isValid()) {
+                return requestValidationFailed(requestContext, contractPath, validation);
+            }
+        }
+
+        Response response = forward(backend, requestContext, requestBody);
+        return applyResponseContract(schemaName, contractPath, requestContext, response);
+    }
+
+    protected Optional<JsonNode> parseSuccessfulJsonResponse(Response response) {
+        if (response == null || response.getStatusInfo().getFamily() != Response.Status.Family.SUCCESSFUL) {
+            return Optional.empty();
+        }
+
+        MediaType mediaType = response.getMediaType();
+        if (mediaType != null && !mediaType.isCompatible(MediaType.APPLICATION_JSON_TYPE)) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(parseJsonEntity(response));
+        } catch (Exception e) {
+            log.warn("Failed to parse successful JSON response", e);
+            return Optional.empty();
+        }
+    }
+
+    protected JsonNode parseJsonEntity(Response response) throws Exception {
+        Object entity = response.getEntity();
+        if (entity == null) {
+            return objectMapper.nullNode();
+        }
+        if (entity instanceof JsonNode jsonNode) {
+            return jsonNode;
+        }
+        if (entity instanceof byte[] bytes) {
+            return objectMapper.readTree(bytes);
+        }
+        if (entity instanceof String text) {
+            return objectMapper.readTree(text);
+        }
+        return objectMapper.valueToTree(entity);
     }
 
     protected Response backendNotFound(String backendName) {
