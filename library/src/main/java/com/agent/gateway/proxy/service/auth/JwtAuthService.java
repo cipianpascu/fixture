@@ -2,7 +2,10 @@ package com.agent.gateway.proxy.service.auth;
 
 import com.agent.gateway.proxy.auth.AuthTokens;
 import com.agent.gateway.proxy.config.ProxyProperties;
+import com.agent.gateway.proxy.exception.AuthResponseMappingException;
 import com.agent.gateway.proxy.exception.AuthServiceException;
+import com.agent.gateway.proxy.exception.AuthenticationDeniedException;
+import com.agent.gateway.proxy.exception.AuthorizationDeniedException;
 import com.agent.gateway.proxy.exception.AuthenticationRequiredException;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import lombok.extern.slf4j.Slf4j;
@@ -64,7 +67,14 @@ public class JwtAuthService implements AuthService {
         if (authTokens.isPresent()) {
             AuthTokens tokens = authTokens.get();
             if (tokens.getDisallowedPss() != null && !tokens.getDisallowedPss().isEmpty()) {
-                throw new AuthServiceException(
+                log.warn(
+                    "Auth service denied requested pss. Requested sparteGvo={}, btx={}, pss={}, denied={}",
+                    authRequestConfig.sparteGvo().orElse(null),
+                    authRequestConfig.btx().orElse(null),
+                    authRequestConfig.pss().orElse(null),
+                    tokens.getDisallowedPss()
+                );
+                throw new AuthorizationDeniedException(
                     "Auth service disallowed requested pss: " + tokens.getDisallowedPss());
             }
             applyConfiguredHeaders(tokens, headers);
@@ -126,7 +136,12 @@ public class JwtAuthService implements AuthService {
                 if (tokens.getGlueToken() == null &&
                     tokens.getAuthZToken() == null &&
                     tokens.getCustomerAccessToken() == null) {
-                    throw new AuthServiceException("Auth service returned an empty token payload");
+                    log.warn(
+                        "Auth service returned no token fields. Presence={}",
+                        tokenPresence(tokens)
+                    );
+                    throw new AuthResponseMappingException(
+                        "Authentication response did not contain any usable token");
                 }
                 log.debug("Retrieved auth tokens successfully");
                 return Optional.of(tokens);
@@ -137,6 +152,15 @@ public class JwtAuthService implements AuthService {
             if (e instanceof AuthServiceException authServiceException) {
                 throw authServiceException;
             }
+            if (e instanceof AuthenticationRequiredException authenticationRequiredException) {
+                throw authenticationRequiredException;
+            }
+            if (e instanceof AuthenticationDeniedException authenticationDeniedException) {
+                throw authenticationDeniedException;
+            }
+            if (e instanceof AuthorizationDeniedException authorizationDeniedException) {
+                throw authorizationDeniedException;
+            }
             throw new AuthServiceException("Error retrieving tokens from auth service", e);
         }
     }
@@ -145,8 +169,11 @@ public class JwtAuthService implements AuthService {
         String bearerSource = securityConfig.get("bearer-source");
         if (bearerSource != null && !bearerSource.isBlank()) {
             String bearerToken = tokenValue(tokens, bearerSource)
-                .orElseThrow(() -> new AuthServiceException(
-                    "Configured bearer-source '%s' did not resolve to a token".formatted(bearerSource)));
+                .orElseThrow(() -> missingMappedToken(
+                    "Configured bearer-source '%s' did not resolve to a token".formatted(bearerSource),
+                    bearerSource,
+                    null,
+                    tokens));
             String bearerHeader = securityConfig.getOrDefault("bearer-header", "Authorization");
             String prefix = securityConfig.getOrDefault("bearer-prefix", "Bearer");
             headers.put(bearerHeader, prefix.isBlank() ? bearerToken : prefix + " " + bearerToken);
@@ -157,9 +184,12 @@ public class JwtAuthService implements AuthService {
             String headerName = entry.getKey();
             String tokenSource = entry.getValue();
             String tokenValue = tokenValue(tokens, tokenSource)
-                .orElseThrow(() -> new AuthServiceException(
+                .orElseThrow(() -> missingMappedToken(
                     "Configured token source '%s' for header '%s' did not resolve to a token"
-                        .formatted(tokenSource, headerName)));
+                        .formatted(tokenSource, headerName),
+                    tokenSource,
+                    headerName,
+                    tokens));
             headers.put(headerName, tokenValue);
         }
 
@@ -202,6 +232,45 @@ public class JwtAuthService implements AuthService {
                 Optional.ofNullable(tokens.getCustomerAccessToken());
             default -> Optional.empty();
         };
+    }
+
+    private AuthResponseMappingException missingMappedToken(
+        String message,
+        String tokenSource,
+        String headerName,
+        AuthTokens tokens) {
+        if (headerName == null) {
+            log.warn(
+                "JWT auth mapping failed: {}. tokenSource={}, presence={}",
+                message,
+                tokenSource,
+                tokenPresence(tokens)
+            );
+        } else {
+            log.warn(
+                "JWT auth mapping failed: {}. tokenSource={}, headerName={}, presence={}",
+                message,
+                tokenSource,
+                headerName,
+                tokenPresence(tokens)
+            );
+        }
+        return new AuthResponseMappingException(message);
+    }
+
+    private Map<String, Boolean> tokenPresence(AuthTokens tokens) {
+        Map<String, Boolean> presence = new LinkedHashMap<>();
+        presence.put("glue_token", tokens.getGlueToken() != null && !tokens.getGlueToken().isBlank());
+        presence.put("auth_z_token", tokens.getAuthZToken() != null && !tokens.getAuthZToken().isBlank());
+        presence.put(
+            "customer_access_token",
+            tokens.getCustomerAccessToken() != null && !tokens.getCustomerAccessToken().isBlank()
+        );
+        presence.put(
+            "disallowed_pss",
+            tokens.getDisallowedPss() != null && !tokens.getDisallowedPss().isEmpty()
+        );
+        return presence;
     }
 
     private String encodePathSegment(String value) {

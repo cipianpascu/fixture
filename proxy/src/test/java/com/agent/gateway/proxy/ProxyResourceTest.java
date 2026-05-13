@@ -209,6 +209,39 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
     }
 
     @Test
+    void returnsUnauthorizedWhenConfiguredJwtTokenIsMissingFromAuthResponse() {
+        given()
+            .header("X-Session-Id", "missing-customer-token-session")
+            .when()
+            .get("/api/v1/jwt-apigee-service/ping")
+            .then()
+            .statusCode(401)
+            .body("error", containsString("bearer-source 'customer_access_token'"));
+    }
+
+    @Test
+    void returnsUnauthorizedWhenAuthServiceExplicitlyRejectsAuthentication() {
+        given()
+            .header("X-Session-Id", "auth-denied-session")
+            .when()
+            .get("/api/v1/jwt-service/ping")
+            .then()
+            .statusCode(401)
+            .body("error", containsString("HTTP 401"));
+    }
+
+    @Test
+    void returnsForbiddenWhenAuthServiceDisallowsRequestedGrants() {
+        given()
+            .header("X-Session-Id", "forbidden-session")
+            .when()
+            .get("/api/v1/jwt-service/ping")
+            .then()
+            .statusCode(403)
+            .body("error", containsString("disallowed requested pss"));
+    }
+
+    @Test
     void mapsHeaderDrivenTransactionIdIntoBackendRequestId() {
         given()
             .contentType(ContentType.JSON)

@@ -217,7 +217,7 @@ class BaseResourceTest {
             }
 
             @Override
-            public Optional<AuthRequestConfig> authRequest() {
+            public Optional<ProxyProperties.AuthRequestConfig> authRequest() {
                 return Optional.empty();
             }
 
@@ -227,7 +227,7 @@ class BaseResourceTest {
             }
 
             @Override
-            public Optional<ProxyConfig> proxy() {
+            public Optional<ProxyProperties.ProxyConfig> proxy() {
                 return Optional.empty();
             }
         };

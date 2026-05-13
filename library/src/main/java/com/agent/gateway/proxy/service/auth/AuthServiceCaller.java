@@ -2,6 +2,8 @@ package com.agent.gateway.proxy.service.auth;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.exception.AuthServiceException;
+import com.agent.gateway.proxy.exception.AuthenticationDeniedException;
+import com.agent.gateway.proxy.exception.AuthorizationDeniedException;
 import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import com.agent.gateway.proxy.service.TlsContextFactory;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -90,6 +92,12 @@ public class AuthServiceCaller {
             }
 
             HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 401) {
+                throw new AuthenticationDeniedException(describeFailure(response));
+            }
+            if (response.statusCode() == 403) {
+                throw new AuthorizationDeniedException(describeFailure(response));
+            }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new AuthServiceException(describeFailure(response));
             }

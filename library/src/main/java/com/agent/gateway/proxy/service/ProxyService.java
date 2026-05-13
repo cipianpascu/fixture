@@ -2,7 +2,9 @@ package com.agent.gateway.proxy.service;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.exception.AuthServiceException;
+import com.agent.gateway.proxy.exception.AuthenticationDeniedException;
 import com.agent.gateway.proxy.exception.AuthenticationRequiredException;
+import com.agent.gateway.proxy.exception.AuthorizationDeniedException;
 import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import com.agent.gateway.proxy.exception.UpstreamProxyException;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
@@ -80,14 +82,24 @@ public class ProxyService {
         maxRetries = 2,
         delay = 200,
         retryOn = {UpstreamProxyException.class, AuthServiceException.class},
-        abortOn = {ProxyConfigurationException.class, AuthenticationRequiredException.class}
+        abortOn = {
+            ProxyConfigurationException.class,
+            AuthenticationRequiredException.class,
+            AuthenticationDeniedException.class,
+            AuthorizationDeniedException.class
+        }
     )
     @CircuitBreaker(
         requestVolumeThreshold = 4,
         failureRatio = 0.5,
         delay = 5000,
         failOn = {UpstreamProxyException.class, AuthServiceException.class},
-        skipOn = {ProxyConfigurationException.class, AuthenticationRequiredException.class}
+        skipOn = {
+            ProxyConfigurationException.class,
+            AuthenticationRequiredException.class,
+            AuthenticationDeniedException.class,
+            AuthorizationDeniedException.class
+        }
     )
     @Fallback(fallbackMethod = "forwardFallback")
     public Response forward(
@@ -172,6 +184,18 @@ public class ProxyService {
         if (failure instanceof AuthenticationRequiredException authenticationRequiredException) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(Map.of("error", authenticationRequiredException.getMessage()))
+                .build();
+        }
+
+        if (failure instanceof AuthenticationDeniedException authenticationDeniedException) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                .entity(Map.of("error", authenticationDeniedException.getMessage()))
+                .build();
+        }
+
+        if (failure instanceof AuthorizationDeniedException authorizationDeniedException) {
+            return Response.status(Response.Status.FORBIDDEN)
+                .entity(Map.of("error", authorizationDeniedException.getMessage()))
                 .build();
         }
 

@@ -398,6 +398,29 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
                 return;
             }
 
+            if ("missing-customer-token-session".equals(sessionId)) {
+                respond(
+                    exchange,
+                    200,
+                    "{\"glue_token\":\"glue-token\",\"auth_z_token\":\"authz-token\",\"disallowed_pss\":[]}"
+                );
+                return;
+            }
+
+            if ("forbidden-session".equals(sessionId)) {
+                respond(
+                    exchange,
+                    200,
+                    "{\"glue_token\":\"glue-token\",\"auth_z_token\":\"authz-token\",\"customer_access_token\":\"customer-token\",\"disallowed_pss\":[\"SecondFunction\"]}"
+                );
+                return;
+            }
+
+            if ("auth-denied-session".equals(sessionId)) {
+                respond(exchange, 401, "{\"error\":\"not authenticated\"}");
+                return;
+            }
+
             respond(
                 exchange,
                 200,
