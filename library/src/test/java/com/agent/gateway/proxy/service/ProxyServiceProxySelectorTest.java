@@ -8,14 +8,21 @@ import java.net.Proxy;
 import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 class ProxyServiceProxySelectorTest {
 
@@ -77,6 +84,17 @@ class ProxyServiceProxySelectorTest {
             HttpClient.Version.HTTP_1_1,
             ProxyService.resolveHttpVersion(backend("orders", proxy("proxy.internal", 8080, List.of()), "http/1.1"))
         );
+    }
+
+    @Test
+    void decodesGzippedResponseBodies() throws Exception {
+        byte[] original = "{\"status\":\"ok\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        ProxyService.DecodedResponse decoded = ProxyService.decodeResponse(
+            httpResponse(gzip(original), Map.of("Content-Encoding", List.of("gzip")))
+        );
+
+        assertEquals(true, decoded.decompressed());
+        assertArrayEquals(original, decoded.body());
     }
 
     private ProxyProperties.BackendDefinition backend(String name, ProxyProperties.ProxyConfig proxyConfig) {
@@ -167,5 +185,57 @@ class ProxyServiceProxySelectorTest {
                 return nonProxyHosts;
             }
         };
+    }
+
+    private HttpResponse<byte[]> httpResponse(byte[] body, Map<String, List<String>> headers) {
+        return new HttpResponse<>() {
+            @Override
+            public int statusCode() {
+                return 200;
+            }
+
+            @Override
+            public HttpRequest request() {
+                return null;
+            }
+
+            @Override
+            public Optional<HttpResponse<byte[]>> previousResponse() {
+                return Optional.empty();
+            }
+
+            @Override
+            public HttpHeaders headers() {
+                return HttpHeaders.of(headers, (name, value) -> true);
+            }
+
+            @Override
+            public byte[] body() {
+                return body;
+            }
+
+            @Override
+            public Optional<javax.net.ssl.SSLSession> sslSession() {
+                return Optional.empty();
+            }
+
+            @Override
+            public URI uri() {
+                return URI.create("http://backend.example.com");
+            }
+
+            @Override
+            public HttpClient.Version version() {
+                return HttpClient.Version.HTTP_1_1;
+            }
+        };
+    }
+
+    private byte[] gzip(byte[] payload) throws IOException {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzipOutputStream = new GZIPOutputStream(outputStream)) {
+            gzipOutputStream.write(payload);
+        }
+        return outputStream.toByteArray();
     }
 }

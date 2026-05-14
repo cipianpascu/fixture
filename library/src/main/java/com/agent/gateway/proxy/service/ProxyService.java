@@ -20,6 +20,7 @@ import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.exceptions.CircuitBreakerOpenException;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
 import java.net.InetSocketAddress;
 import java.net.ProxySelector;
 import java.net.URI;
@@ -36,6 +37,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.List;
 import java.util.Optional;
+import java.util.zip.GZIPInputStream;
 
 /**
  * Proxy Service - Lightweight Request Forwarding (Quarkus)
@@ -136,12 +138,14 @@ public class ProxyService {
             requestBuilder.method(request.method(), bodyPublisher);
             
             // Forward request
-            HttpResponse<String> response = getHttpClient(backend).send(
+            HttpResponse<byte[]> response = getHttpClient(backend).send(
                 requestBuilder.build(),
-                HttpResponse.BodyHandlers.ofString()
+                HttpResponse.BodyHandlers.ofByteArray()
             );
             
             log.info("Received response: {} from {}", response.statusCode(), targetUrl);
+
+            DecodedResponse decodedResponse = decodeResponse(response);
             
             // Build JAX-RS response
             Response.ResponseBuilder responseBuilder = Response.status(response.statusCode());
@@ -152,11 +156,14 @@ public class ProxyService {
                 if (blockedResponseHeaders.contains(name.toLowerCase(Locale.ROOT))) {
                     return;
                 }
+                if (decodedResponse.decompressed() && "content-encoding".equalsIgnoreCase(name)) {
+                    return;
+                }
                 values.forEach(value -> responseBuilder.header(name, value));
             });
             
             // Set body
-            responseBuilder.entity(response.body());
+            responseBuilder.entity(decodedResponse.body());
             
             return responseBuilder.build();
             
@@ -274,6 +281,17 @@ public class ProxyService {
         return backend.proxy().map(BackendProxySelector::new);
     }
 
+    static DecodedResponse decodeResponse(HttpResponse<byte[]> response) throws IOException {
+        byte[] body = response.body() == null ? new byte[0] : response.body();
+        String contentEncoding = response.headers().firstValue("Content-Encoding").orElse("");
+        if (!"gzip".equalsIgnoreCase(contentEncoding)) {
+            return new DecodedResponse(body, false);
+        }
+        try (GZIPInputStream gzipInputStream = new GZIPInputStream(new ByteArrayInputStream(body))) {
+            return new DecodedResponse(gzipInputStream.readAllBytes(), true);
+        }
+    }
+
     static HttpClient.Version resolveHttpVersion(ProxyProperties.BackendDefinition backend) {
         String configured = backend.httpVersion();
         if (configured == null || configured.isBlank()) {
@@ -371,5 +389,8 @@ public class ProxyService {
             }
             return false;
         }
+    }
+
+    record DecodedResponse(byte[] body, boolean decompressed) {
     }
 }

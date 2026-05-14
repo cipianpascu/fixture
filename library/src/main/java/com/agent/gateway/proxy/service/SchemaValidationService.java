@@ -609,6 +609,9 @@ public class SchemaValidationService {
         if (entity instanceof JsonNode jsonNode) {
             return jsonNode;
         }
+        if (entity instanceof byte[] bytes) {
+            return objectMapper.readTree(bytes);
+        }
         if (entity instanceof String body) {
             return objectMapper.readTree(body);
         }
@@ -686,7 +689,7 @@ public class SchemaValidationService {
         Response.ResponseBuilder builder = Response.status(original.getStatus());
         MultivaluedMap<String, Object> headers = original.getHeaders();
         headers.forEach((name, values) -> {
-            if ("content-length".equalsIgnoreCase(name)) {
+            if ("content-length".equalsIgnoreCase(name) || "content-encoding".equalsIgnoreCase(name)) {
                 return;
             }
             values.forEach(value -> builder.header(name, value));
