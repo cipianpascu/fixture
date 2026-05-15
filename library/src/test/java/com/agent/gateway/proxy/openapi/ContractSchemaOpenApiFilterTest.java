@@ -50,4 +50,36 @@ class ContractSchemaOpenApiFilterTest {
 
         assertEquals(contractPathItem, matched);
     }
+
+    @Test
+    void prefersTheMostSpecificTrailingPathMatch() {
+        OpenAPI contractDocument = OASFactory.createOpenAPI();
+        contractDocument.setPaths(OASFactory.createPaths());
+        PathItem genericTransactions = OASFactory.createPathItem();
+        PathItem productTransactions = OASFactory.createPathItem();
+        contractDocument.getPaths().addPathItem("/transactions", genericTransactions);
+        contractDocument.getPaths().addPathItem("/products/{productId}/transactions", productTransactions);
+
+        PathItem matched = filter.findMatchingPathItem(
+            contractDocument,
+            "/api/v1/products/{productId}/transactions"
+        );
+
+        assertEquals(productTransactions, matched);
+    }
+
+    @Test
+    void doesNotAddOperationsThatWereNotScanned() {
+        PathItem scannedPathItem = OASFactory.createPathItem();
+        scannedPathItem.setGET(OASFactory.createOperation().summary("scanned get"));
+
+        PathItem contractPathItem = OASFactory.createPathItem();
+        contractPathItem.setGET(OASFactory.createOperation().summary("contract get"));
+        contractPathItem.setPOST(OASFactory.createOperation().summary("contract post"));
+
+        filter.applyContractPathItem(scannedPathItem, contractPathItem);
+
+        assertEquals("contract get", scannedPathItem.getGET().getSummary());
+        assertEquals(null, scannedPathItem.getPOST());
+    }
 }

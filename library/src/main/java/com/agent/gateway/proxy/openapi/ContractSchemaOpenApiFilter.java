@@ -61,13 +61,17 @@ public class ContractSchemaOpenApiFilter implements OASFilter {
         }
 
         String[] publicSegments = pathSegments(publicPath);
+        PathItem bestMatch = null;
+        int bestMatchLength = -1;
         for (Map.Entry<String, PathItem> entry : contractDocument.getPaths().getPathItems().entrySet()) {
-            if (sameTrailingSegments(publicSegments, pathSegments(entry.getKey()))) {
-                return entry.getValue();
+            String[] contractSegments = pathSegments(entry.getKey());
+            if (sameTrailingSegments(publicSegments, contractSegments) && contractSegments.length > bestMatchLength) {
+                bestMatch = entry.getValue();
+                bestMatchLength = contractSegments.length;
             }
         }
 
-        return null;
+        return bestMatch;
     }
 
     private boolean sameTrailingSegments(String[] publicSegments, String[] contractSegments) {
@@ -90,7 +94,7 @@ public class ContractSchemaOpenApiFilter implements OASFilter {
             .toArray(String[]::new);
     }
 
-    private void applyContractPathItem(PathItem target, PathItem contract) {
+    void applyContractPathItem(PathItem target, PathItem contract) {
         if (contract.getSummary() != null) {
             target.setSummary(contract.getSummary());
         }
@@ -106,7 +110,6 @@ public class ContractSchemaOpenApiFilter implements OASFilter {
             Operation contractOperation = operationEntry.getValue();
             Operation targetOperation = operationFor(target, method);
             if (targetOperation == null) {
-                target.setOperation(method, contractOperation);
                 continue;
             }
             applyContractOperation(targetOperation, contractOperation);
