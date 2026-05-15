@@ -68,6 +68,8 @@ public class ProxyService {
         "x-customer-access-token",
         "x-serverless-authorization"
     );
+
+    private static final String MASKED_VALUE = "***";
     
     @Inject
     AuthServiceFactory authServiceFactory;
@@ -121,6 +123,7 @@ public class ProxyService {
             AuthService authService = authServiceFactory.createAuthService(backend);
             authService.enrichHeaders(request, headers, requestBody);
             String outboundRequestBody = authService.transformRequestBody(request, headers, requestBody);
+            logBackendHeaders(backend, targetUrl, headers);
             
             // Build HTTP request
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
@@ -337,6 +340,75 @@ public class ProxyService {
         });
 
         return blocked;
+    }
+
+    private void logBackendHeaders(
+        ProxyProperties.BackendDefinition backend,
+        String targetUrl,
+        Map<String, String> headers) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
+        log.debug(
+            "Outbound headers for backend {} to {}: {}",
+            backend.name(),
+            targetUrl,
+            sanitizeHeadersForLogging(backend, headers)
+        );
+    }
+
+    static Map<String, String> sanitizeHeadersForLogging(
+        ProxyProperties.BackendDefinition backend,
+        Map<String, String> headers) {
+        Set<String> sensitiveHeaders = sensitiveRequestHeaders(backend);
+        Map<String, String> sanitized = new HashMap<>();
+        headers.forEach((name, value) -> {
+            if (name == null) {
+                return;
+            }
+            if (sensitiveHeaders.contains(name.toLowerCase(Locale.ROOT))) {
+                sanitized.put(name, MASKED_VALUE);
+            } else {
+                sanitized.put(name, value);
+            }
+        });
+        return sanitized;
+    }
+
+    static Set<String> sensitiveRequestHeaders(ProxyProperties.BackendDefinition backend) {
+        Set<String> sensitive = new LinkedHashSet<>();
+        sensitive.add("authorization");
+        sensitive.add("proxy-authorization");
+        sensitive.add("cookie");
+        sensitive.add("set-cookie");
+        sensitive.add("x-glue-token");
+        sensitive.add("x-auth-z-token");
+        sensitive.add("x-customer-access-token");
+        sensitive.add("x-serverless-authorization");
+
+        Map<String, String> securityConfig = backend.securityConfig();
+        if (securityConfig == null || securityConfig.isEmpty()) {
+            return sensitive;
+        }
+
+        String bearerHeader = securityConfig.get("bearer-header");
+        if (bearerHeader != null && !bearerHeader.isBlank()) {
+            sensitive.add(bearerHeader.toLowerCase(Locale.ROOT));
+        }
+
+        securityConfig.keySet().forEach(key -> {
+            if (key == null) {
+                return;
+            }
+            if (key.startsWith("token-headers.")) {
+                sensitive.add(key.substring("token-headers.".length()).toLowerCase(Locale.ROOT));
+            }
+            if (key.startsWith("static-headers.")) {
+                sensitive.add(key.substring("static-headers.".length()).toLowerCase(Locale.ROOT));
+            }
+        });
+
+        return sensitive;
     }
 
     static final class BackendProxySelector extends ProxySelector {

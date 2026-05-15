@@ -97,6 +97,30 @@ class ProxyServiceProxySelectorTest {
         assertArrayEquals(original, decoded.body());
     }
 
+    @Test
+    void masksSensitiveHeadersForDebugLogging() {
+        Map<String, String> sanitized = ProxyService.sanitizeHeadersForLogging(
+            backend("orders", proxy("proxy.internal", 8080, List.of()), "http1_1", Map.of(
+                "bearer-header", "Authorization",
+                "token-headers.X-Glue-Token", "glue_token",
+                "static-headers.x-api-key", "secret-key"
+            )),
+            Map.of(
+                "authorization", "Bearer token",
+                "cookie", "session=abc",
+                "X-Glue-Token", "glue",
+                "x-api-key", "secret-key",
+                "x-trace-id", "trace-123"
+            )
+        );
+
+        assertEquals("***", sanitized.get("authorization"));
+        assertEquals("***", sanitized.get("cookie"));
+        assertEquals("***", sanitized.get("X-Glue-Token"));
+        assertEquals("***", sanitized.get("x-api-key"));
+        assertEquals("trace-123", sanitized.get("x-trace-id"));
+    }
+
     private ProxyProperties.BackendDefinition backend(String name, ProxyProperties.ProxyConfig proxyConfig) {
         return backend(name, proxyConfig, "http1_1");
     }
@@ -105,6 +129,14 @@ class ProxyServiceProxySelectorTest {
         String name,
         ProxyProperties.ProxyConfig proxyConfig,
         String httpVersion) {
+        return backend(name, proxyConfig, httpVersion, Map.of());
+    }
+
+    private ProxyProperties.BackendDefinition backend(
+        String name,
+        ProxyProperties.ProxyConfig proxyConfig,
+        String httpVersion,
+        Map<String, String> securityConfig) {
         return new ProxyProperties.BackendDefinition() {
             @Override
             public String name() {
@@ -148,7 +180,7 @@ class ProxyServiceProxySelectorTest {
 
             @Override
             public Map<String, String> securityConfig() {
-                return Map.of();
+                return securityConfig;
             }
 
             @Override
