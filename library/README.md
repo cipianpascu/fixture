@@ -12,8 +12,75 @@ This module contains the reusable runtime pieces that are shared by proxy-style 
 - schema loading and validation
 - forwarding, auth, and outbound TLS services
 - OpenAPI decoration from loaded contract schemas
+- auth-service transport and auth strategy wiring
+- per-backend transport tuning such as outbound proxy and HTTP version
 
 This module does not define concrete HTTP resources. Concrete resources, their config, and their published contract schemas remain application-owned.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A[API Consumer] --> B[Concrete Resource in application module]
+
+    subgraph APP[Application Layer]
+        B --> B1[JAX-RS Endpoints]
+        B --> B2[Resource-specific Config]
+        B --> B3[Business Orchestration]
+        B --> B4[Contract Schemas]
+    end
+
+    subgraph LIB[Shared Layer: bfa-library]
+        C[BaseResource] --> C1[Request Context Creation]
+        C --> C2[defaultProxy Helper]
+        C --> C3[Validation Helpers]
+        C --> C4[Safe JSON Response Parsing]
+
+        D[SchemaValidationService] --> D1[Path and Method Validation]
+        D --> D2[Parameter Validation]
+        D --> D3[Request Body Validation]
+        D --> D4[Response Trimming]
+
+        E[SchemaLoader] --> E1[Load Schemas at Startup]
+        E --> E2[Keep Schemas In Memory]
+        E --> E3[Compiled JSON Schema Cache]
+
+        F[ProxyService] --> F1[Forward Requests]
+        F --> F2[Retry and Circuit Breaker]
+        F --> F3[Header Sanitization]
+        F --> F4[Per-backend HTTP Version]
+        F --> F5[Per-backend Proxy Settings]
+        F --> F6[TLS-aware HttpClient]
+        F --> F7[Sanitized Debug Header Logging]
+
+        G[AuthServiceFactory] --> G1[none]
+        G --> G2[basic]
+        G --> G3[jwt]
+        G --> G4[form]
+        G --> G5[transactionid]
+        G --> G6[cloudrun]
+
+        H[TlsContextFactory]
+        I[ContractSchemaOpenApiFilter]
+        J[ProxyProperties]
+    end
+
+    B --> C
+    C --> D
+    C --> F
+    D --> E
+    F --> G
+    F --> H
+    I --> E
+    J --> C
+    J --> D
+    J --> F
+    J --> G
+    J --> H
+
+    F --> K[Configured Backend]
+    G --> L[Optional Auth Service]
+```
 
 ## Schema Contract
 
@@ -40,4 +107,61 @@ This means downstream applications should place all contract and backend schemas
 - forward requests to configured backends
 - enrich outbound requests with auth strategies
 - apply outbound truststore and mTLS configuration
+- decode gzipped upstream responses before response parsing and trimming
 - decorate generated Swagger/OpenAPI output from in-memory contract schemas
+
+## Auth Strategies
+
+The library provides shared auth strategy wiring through `AuthServiceFactory`. Supported modes currently include:
+
+- `none`
+- `basic`
+- `jwt`
+- `form`
+- `transactionid`
+- `cloudrun`
+
+Notable behavior:
+
+- `jwt` supports configurable token-to-header mapping and sparse `auth-request` bodies
+- `form` supports both `auth-service` and `inline` modes
+- `form` inline mode expects `application/x-www-form-urlencoded` on the forwarded request
+- `transactionid` supports mapped auth request bodies built from request headers/cookies/literals
+- `cloudrun` adds service-to-service identity for Cloud Run protected upstreams
+
+Auth failures are categorized so applications get clearer responses:
+
+- missing or invalid caller authentication can return `401`
+- authorization denials can return `403`
+- broken or unavailable auth dependencies remain `502`
+
+## Transport Behavior
+
+`ProxyService` owns outbound backend transport behavior. Current shared features include:
+
+- per-backend TLS profile selection
+- optional per-backend outbound proxy settings
+- per-backend HTTP version selection, with `HTTP/1.1` as the safe default
+- response header sanitization before data is returned to the API consumer
+- sanitized debug logging of outbound backend headers
+
+The auth-service caller uses the same shared transport principles, but auth-service-specific settings remain part of the shared library internals rather than per-backend application config.
+
+## What You Can Build On Top
+
+Applications using this library can build:
+
+- simple pass-through proxy resources
+- CRUD resources backed by one or more configured backends
+- orchestration resources that aggregate multiple backend calls
+- transformation/composition resources that reshape backend responses
+- Cloud Run protected resources using service-to-service IAM auth
+- legacy backend adapters with TLS, mTLS, or backend-specific auth behavior
+
+The library owns the transport, contract, auth, and validation mechanics. The application layer owns resource paths, business logic, orchestration, and published contracts.
+
+## More Information
+
+For concrete examples, application-level patterns, and end-to-end configuration shapes, see the proxy module guide:
+
+- [proxy/README.md](../proxy/README.md)
