@@ -24,41 +24,47 @@ flowchart TD
     A[API Consumer] --> B[Concrete Resource in application module]
 
     subgraph APP[Application Layer]
-        B --> B1[JAX-RS Endpoints]
-        B --> B2[Resource-specific Config]
-        B --> B3[Business Orchestration]
-        B --> B4[Contract Schemas]
+        B[Concrete Resource
+        - JAX-RS endpoints
+        - resource-specific config
+        - business orchestration
+        - contract schemas]
     end
 
     subgraph LIB[Shared Layer: bfa-library]
-        C[BaseResource] --> C1[Request Context Creation]
-        C --> C2[defaultProxy Helper]
-        C --> C3[Validation Helpers]
-        C --> C4[Safe JSON Response Parsing]
+        C[BaseResource
+        - request context creation
+        - defaultProxy helper
+        - validation helpers
+        - safe JSON response parsing]
 
-        D[SchemaValidationService] --> D1[Path and Method Validation]
-        D --> D2[Parameter Validation]
-        D --> D3[Request Body Validation]
-        D --> D4[Response Trimming]
+        D[SchemaValidationService
+        - path and method validation
+        - parameter validation
+        - request body validation
+        - response trimming]
 
-        E[SchemaLoader] --> E1[Load Schemas at Startup]
-        E --> E2[Keep Schemas In Memory]
-        E --> E3[Compiled JSON Schema Cache]
+        E[SchemaLoader
+        - load schemas at startup
+        - keep schemas in memory
+        - compiled JSON schema cache]
 
-        F[ProxyService] --> F1[Forward Requests]
-        F --> F2[Retry and Circuit Breaker]
-        F --> F3[Header Sanitization]
-        F --> F4[Per-backend HTTP Version]
-        F --> F5[Per-backend Proxy Settings]
-        F --> F6[TLS-aware HttpClient]
-        F --> F7[Sanitized Debug Header Logging]
+        F[ProxyService
+        - request forwarding
+        - retry and circuit breaker
+        - header sanitization
+        - per-backend HTTP version
+        - per-backend proxy settings
+        - TLS-aware HttpClient
+        - sanitized debug header logging]
 
-        G[AuthServiceFactory] --> G1[none]
-        G --> G2[basic]
-        G --> G3[jwt]
-        G --> G4[form]
-        G --> G5[transactionid]
-        G --> G6[cloudrun]
+        G[AuthServiceFactory
+        - none
+        - basic
+        - jwt
+        - form
+        - transactionid
+        - cloudrun]
 
         H[TlsContextFactory]
         I[ContractSchemaOpenApiFilter]
