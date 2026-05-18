@@ -30,6 +30,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Locale;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.Set;
@@ -122,6 +123,7 @@ public class ProxyService {
             // Get appropriate auth service for this backend and enrich headers
             AuthService authService = authServiceFactory.createAuthService(backend);
             authService.enrichHeaders(request, headers, requestBody);
+            headers = normalizeHeaders(headers);
             String outboundRequestBody = authService.transformRequestBody(request, headers, requestBody);
             logBackendHeaders(backend, targetUrl, headers);
             
@@ -252,6 +254,21 @@ public class ProxyService {
         headers.entrySet().removeIf(entry ->
             HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT)));
         return headers;
+    }
+
+    static Map<String, String> normalizeHeaders(Map<String, String> headers) {
+        Map<String, String> normalized = new LinkedHashMap<>();
+        headers.forEach((key, value) -> {
+            if (key == null) {
+                return;
+            }
+            String normalizedKey = key.toLowerCase(Locale.ROOT);
+            String existingValue = normalized.get(normalizedKey);
+            if (existingValue == null || !key.equals(normalizedKey)) {
+                normalized.put(normalizedKey, value);
+            }
+        });
+        return normalized;
     }
 
     private HttpClient getHttpClient(ProxyProperties.BackendDefinition backend) {

@@ -121,6 +121,19 @@ class ProxyServiceProxySelectorTest {
         assertEquals("trace-123", sanitized.get("x-trace-id"));
     }
 
+    @Test
+    void normalizesHeadersCaseInsensitivelyAfterAuthEnrichment() {
+        Map<String, String> normalized = ProxyService.normalizeHeaders(Map.of(
+            "authorization", "Bearer incoming-user-token",
+            "Authorization", "Bearer backend-token",
+            "X-Request-Id", "tx-123"
+        ));
+
+        assertEquals(2, normalized.size());
+        assertEquals("Bearer backend-token", normalized.get("authorization"));
+        assertEquals("tx-123", normalized.get("x-request-id"));
+    }
+
     private ProxyProperties.BackendDefinition backend(String name, ProxyProperties.ProxyConfig proxyConfig) {
         return backend(name, proxyConfig, "http1_1");
     }
