@@ -190,6 +190,17 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
     }
 
     @Test
+    void allowsOverridingTheDefaultJwtAuthPathPerBackend() {
+        given()
+            .header("X-Session-Id", "custom-path-session")
+            .when()
+            .get("/api/v1/jwt-custom-auth-path-service/ping")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("jwt-custom-auth-path-ok"));
+    }
+
+    @Test
     void mapsJwtTokensToApigeeStyleHeaders() {
         Response response = given()
             .header("X-Session-Id", "apigee-session")
@@ -317,6 +328,50 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
         assertEquals("glue-token", ProxyTestResource.getLastGlueToken());
         assertNull(response.getHeader("Authorization"));
         assertNull(response.getHeader("X-Glue-Token"));
+    }
+
+    @Test
+    void mapsJwtAuthorizationTokensToConfiguredHeadersForEidpAuthzFlow() {
+        given()
+            .header("X-Session-Id", "eidp-session")
+            .header("Branch-Customer-Number", "Branch-01")
+            .when()
+            .get("/api/v1/jwt-authz-eidp-service/ping")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("jwt-authz-eidp-ok"));
+
+        assertEquals("authorization-token", ProxyTestResource.getLastEidpAuthorizationToken());
+        assertEquals("eidp-access-token", ProxyTestResource.getLastEidpAccessToken());
+    }
+
+    @Test
+    void mapsJwtAuthorizationTokensToBearerHeaderForCiamAuthzFlow() {
+        Response response = given()
+            .header("X-Session-Id", "ciam-session")
+            .header("Branch-Customer-Number", "Branch-02")
+            .when()
+            .get("/api/v1/jwt-authz-ciam-service/ping")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("jwt-authz-ciam-ok"))
+            .extract()
+            .response();
+
+        assertEquals("Bearer ciam-customer-token", ProxyTestResource.getLastCiamCustomerAccessToken());
+        assertNull(response.getHeader("Authorization"));
+    }
+
+    @Test
+    void returnsForbiddenWhenAuthzServiceDisallowsRequestedServiceShopTransactions() {
+        given()
+            .header("X-Session-Id", "eidp-forbidden-session")
+            .header("Branch-Customer-Number", "Branch-01")
+            .when()
+            .get("/api/v1/jwt-authz-eidp-service/ping")
+            .then()
+            .statusCode(403)
+            .body("error", containsString("disallowed requested serviceShopTransactions"));
     }
 
     @Test

@@ -79,12 +79,33 @@ public interface ProxyProperties {
     }
 
     interface AuthRequestConfig {
+        Optional<String> path();
+
         @WithName("sparte-gvo")
         Optional<List<String>> sparteGvo();
 
         Optional<List<String>> btx();
 
         Optional<List<String>> pss();
+    }
+
+    interface AuthzRequestConfig {
+        String path();
+
+        @WithName("branch-customer-number")
+        Optional<String> branchCustomerNumber();
+
+        @WithName("branch-customer-number-source")
+        Optional<String> branchCustomerNumberSource();
+
+        @WithName("gvo-entitlements-list")
+        Optional<List<String>> gvoEntitlementsList();
+
+        @WithName("business-transactions")
+        Optional<List<String>> businessTransactions();
+
+        @WithName("service-shop-transactions")
+        Optional<List<String>> serviceShopTransactions();
     }
     
     interface BackendDefinition {
@@ -115,6 +136,9 @@ public interface ProxyProperties {
 
         @WithName("auth-request")
         Optional<AuthRequestConfig> authRequest();
+
+        @WithName("authz-request")
+        Optional<AuthzRequestConfig> authzRequest();
 
         @WithName("tls-profile")
         Optional<String> tlsProfile();

@@ -61,10 +61,16 @@ flowchart TD
         G[AuthServiceFactory
         - none
         - basic
-        - jwt
+        - jwt auth and authz
         - form
         - transactionid
         - cloudrun]
+
+        K[AuthServiceCaller
+        - shared auth and authz transport
+        - JSON and form posts
+        - Cloud Run auth-service identity
+        - auth-service TLS]
 
         H[TlsContextFactory]
         I[ContractSchemaOpenApiFilter]
@@ -77,6 +83,7 @@ flowchart TD
     D --> E
     F --> G
     F --> H
+    G --> K
     I --> E
     J --> C
     J --> D
@@ -129,7 +136,8 @@ The library provides shared auth strategy wiring through `AuthServiceFactory`. S
 
 Notable behavior:
 
-- `jwt` supports configurable token-to-header mapping and sparse `auth-request` bodies
+- `jwt` supports configurable token-to-header mapping, sparse `auth-request` bodies, and optional `authz-request` follow-up calls
+- `jwt` supports auth-request path overrides and authz-request path configuration, including absolute URLs
 - `form` supports both `auth-service` and `inline` modes
 - `form` inline mode expects `application/x-www-form-urlencoded` on the forwarded request
 - `transactionid` supports mapped auth request bodies built from request headers/cookies/literals

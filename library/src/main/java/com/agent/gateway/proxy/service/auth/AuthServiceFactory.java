@@ -54,18 +54,30 @@ public class AuthServiceFactory {
      * Create JWT auth service with backend-specific auth request
      */
     private AuthService createJwtAuthService(ProxyProperties.BackendDefinition backend) {
-        ProxyProperties.AuthRequestConfig authRequestConfig = backend.authRequest()
-            .orElseThrow(() -> new ProxyConfigurationException(
-                "JWT auth configured but auth-request missing for backend '%s'".formatted(backend.name())));
-        log.debug("Creating JWT auth service for backend: {} with auth-request: sparteGvo={}, btx={}, pss={}",
+        if (backend.authRequest().isEmpty() && backend.authzRequest().isEmpty()) {
+            throw new ProxyConfigurationException(
+                "JWT auth configured but both auth-request and authz-request are missing for backend '%s'"
+                    .formatted(backend.name()));
+        }
+        log.debug(
+            "Creating JWT auth service for backend: {} with auth-request: sparteGvo={}, btx={}, pss={} and authz-request: path={}, branchCustomerNumber={}, branchCustomerNumberSource={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
             backend.name(),
-            authRequestConfig.sparteGvo().orElse(null),
-            authRequestConfig.btx().orElse(null),
-            authRequestConfig.pss().orElse(null));
+            backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::sparteGvo).orElse(null),
+            backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::btx).orElse(null),
+            backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::pss).orElse(null),
+            backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::path).orElse(null),
+            backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::branchCustomerNumber).orElse(null),
+            backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::branchCustomerNumberSource)
+                .orElse(null),
+            backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::gvoEntitlementsList).orElse(null),
+            backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::businessTransactions).orElse(null),
+            backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::serviceShopTransactions).orElse(null)
+        );
         return new JwtAuthService(
             proxyProperties, 
             authServiceCaller,
-            authRequestConfig,
+            backend.authRequest(),
+            backend.authzRequest(),
             backend.securityConfig()
         );
     }

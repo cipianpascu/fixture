@@ -124,6 +124,24 @@ gateway:
       # securityConfig:
       #   bearer-source: customer_access_token
       #   static-headers.x-api-key: ${APIGEE_API_KEY}
+      #
+      # Optional auth path override:
+      # auth-request:
+      #   path: /custom-auth/tokens/{sessionId}
+      #   btx:
+      #     - FirstFunction
+      #
+      # Optional JWT authz flow:
+      # authz-request:
+      #   path: /auth/authz/eidp/{sessionId}
+      #   branch-customer-number-source: header:Branch-Customer-Number
+      #   gvo-entitlements-list:
+      #     - entitlement-a
+      #   service-shop-transactions:
+      #     - shop-a
+      # securityConfig:
+      #   token-headers.X-Authorization-Token: authorization_token
+      #   token-headers.X-Eidp-Access-Token: eidp_access_token
 
     # Example: JWT auth for Glue-style backends
     # - name: glue-service

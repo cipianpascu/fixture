@@ -202,6 +202,11 @@ class ProxyServiceProxySelectorTest {
             }
 
             @Override
+            public Optional<ProxyProperties.AuthzRequestConfig> authzRequest() {
+                return Optional.empty();
+            }
+
+            @Override
             public Optional<String> tlsProfile() {
                 return Optional.empty();
             }

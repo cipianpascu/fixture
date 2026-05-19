@@ -142,13 +142,78 @@ For `securityType: jwt`, `securityConfig` supports:
 - `token-headers.<Header-Name>`: maps an outbound header to one token field
 - `static-headers.<Header-Name>`: adds a fixed outbound header such as an API key
 
+JWT auth can also optionally perform an authorization follow-up call through `authz-request`.
+
+Additional JWT token sources from authz are:
+
+- `authorization_token`
+- `eidp_access_token`
+- `authz_customer_access_token`
+
 For `securityType: jwt`, `auth-request` fields are independently optional:
 
+- `path`: auth service path override; supports `{sessionId}` placeholder and defaults to `/auth/tokens/{sessionId}`
 - `sparte-gvo`
 - `btx`
 - `pss`
 
 Only configure the lists required by the target auth flow. Omitted fields are not sent to the auth service.
+
+JWT auth requests still use `gateway.auth.service-url` as the base URL. `auth-request.path` only overrides the relative path used for that backend’s auth call.
+
+For `securityType: jwt`, `authz-request` fields are also optional and can be used independently or together with `auth-request`:
+
+- `path`: authz service path; supports `{sessionId}` placeholder
+- `branch-customer-number`: fixed literal branch/customer number
+- `branch-customer-number-source`: dynamic source using `header:<Header-Name>`, `cookie:<Cookie-Name>`, or `literal:<value>`
+- `gvo-entitlements-list`: EIDP authz list
+- `business-transactions`: CIAM authz list
+- `service-shop-transactions`: authz list used by both flows
+
+If `authz-request` is configured, the proxy performs a second authz call and makes the returned tokens available through the same JWT header-mapping mechanism.
+
+Example EIDP authz flow:
+
+```yaml
+gateway:
+  backends:
+    - name: jwt-authz-eidp-service
+      baseUrl: https://partner.example.com
+      path: /api
+      schema: partner.yaml
+      securityType: jwt
+      authz-request:
+        path: /auth/authz/eidp/{sessionId}
+        branch-customer-number-source: header:Branch-Customer-Number
+        gvo-entitlements-list:
+          - entitlement-a
+        service-shop-transactions:
+          - shop-a
+      securityConfig:
+        token-headers.X-Authorization-Token: authorization_token
+        token-headers.X-Eidp-Access-Token: eidp_access_token
+```
+
+Example CIAM authz flow:
+
+```yaml
+gateway:
+  backends:
+    - name: jwt-authz-ciam-service
+      baseUrl: https://partner.example.com
+      path: /api
+      schema: partner.yaml
+      securityType: jwt
+      authz-request:
+        path: /auth/authz/ciam/{sessionId}
+        branch-customer-number-source: header:Branch-Customer-Number
+        business-transactions:
+          - business-a
+        service-shop-transactions:
+          - shop-b
+      securityConfig:
+        bearer-source: authz_customer_access_token
+```
 
 For `securityType: transactionid`, `securityConfig` supports:
 
