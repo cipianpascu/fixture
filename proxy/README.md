@@ -7,6 +7,7 @@ Quarkus-based HTTP proxy for routing agent traffic to multiple upstream backends
 - Routes requests from `/api/v1/{backend-name}/...` to configured upstream services
 - Validates request path, method, and optional JSON body against configured OpenAPI schemas
 - Applies backend-specific auth before forwarding
+- Demonstrates application-owned orchestration resources built on top of the shared library
 - Supports outbound TLS truststores and mTLS client certificates
 - Supports Cloud Run service-to-service IAM auth for backends and for the auth service itself
 - Exposes Quarkus health and Prometheus endpoints
@@ -15,18 +16,19 @@ This module is file-configured only. There is no database and no admin API.
 
 ## Request Flow
 
-1. Incoming request hits `ProxyResource`
-2. Backend is resolved from `gateway.backends`
-3. Request is validated against the backend schema
-4. Auth strategy enriches headers
-5. Request is forwarded to the upstream backend
-6. Upstream response is returned as-is
+1. Generic proxy requests hit `ProxyResource`, resolve a backend from `gateway.backends`, validate the request, enrich auth headers, and forward to the upstream backend
+2. Concrete application resources can orchestrate one or more backend calls, validate against their own published contract, and compose a new response instead of returning an upstream payload directly
 
 Main implementation points:
 
 - Routing entrypoint: [src/main/java/com/agent/gateway/proxy/app/resource/ProxyResource.java](./src/main/java/com/agent/gateway/proxy/app/resource/ProxyResource.java)
 - App-specific orchestration example: [src/main/java/com/agent/gateway/proxy/app/resource/OrderSummaryResource.java](./src/main/java/com/agent/gateway/proxy/app/resource/OrderSummaryResource.java)
 - Shared forwarding, validation, auth, TLS, and OpenAPI support now live in the `bfa-library` module
+
+Current orchestration examples:
+
+- `GET /api/v1/order-summaries/{id}`: fan-out aggregation over orders and payments backends
+- `POST /api/v1/order-summaries/{id}/compose`: forwards selected incoming headers, uses request-body attributes to shape downstream headers and query params, and injects fields from the first backend response into the second backend request
 
 ## Auth Modes
 
@@ -129,7 +131,7 @@ proxy:
 Notes:
 
 - backend proxy settings affect only calls from the proxy to that backend
-- they do not affect calls to `gateway.auth.service-url`
+- they do not affect calls to `gateway.auth.service-url`, which use the auth-service transport configuration instead
 - `non-proxy-hosts` supports exact hosts and `*.` suffix patterns
 - keep `http-version: http1_1` for plain `http://` upstreams
 - use `http-version: http2` only for upstreams that are known to support it correctly, typically over `https://`
@@ -141,6 +143,8 @@ For `securityType: jwt`, `securityConfig` supports:
 - `bearer-prefix`: bearer prefix, defaults to `Bearer`
 - `token-headers.<Header-Name>`: maps an outbound header to one token field
 - `static-headers.<Header-Name>`: adds a fixed outbound header such as an API key
+
+If no explicit bearer or token-header mapping is configured, the runtime preserves the legacy default JWT header injection behavior (`X-Glue-Token`, `X-Auth-Z-Token`, `X-Customer-Access-Token`).
 
 JWT auth can also optionally perform an authorization follow-up call through `authz-request`.
 
@@ -283,8 +287,10 @@ Validation behavior:
 
 - path validation: enabled by `gateway.schemas.validate-requests`
 - JSON body validation: enabled by `gateway.schemas.validate-bodies`
+- malformed or otherwise unprocessable JSON is rejected with `400` when body validation is enabled
 - strict schema presence: enabled by `gateway.schemas.strict-mode`
 - JSON response trimming: enabled by `gateway.schemas.validate-responses`
+- response trimming applies only to JSON bodies and only when a matching response schema is available
 
 ## Examples
 
@@ -562,15 +568,3 @@ curl http://localhost:8080/q/health
 http://localhost:8080/q/dev
 ```
 
-## TODO
-
-- [ ] Response validation (if enabled)
-- [ ] Request/response logging
-- [ ] Rate limiting
-- [ ] WebSocket support
-
-## See Also
-
-- [Migration Guide](../MIGRATION_GUIDE.md)
-- [Example Schemas](src/main/resources/schemas/)
-- [Configuration Reference](src/main/resources/application.yml)

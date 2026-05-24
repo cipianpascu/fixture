@@ -110,14 +110,17 @@ Behavior:
 - all schema files from that directory are loaded once at startup
 - loaded schemas are kept in memory for runtime validation and OpenAPI decoration
 - schemas are never reloaded during normal runtime
+- an explicit reload hook exists for development and testing, and refreshes both validation and OpenAPI-decoration caches
 
 This means downstream applications should place all contract and backend schemas under one shared directory, typically `src/main/resources/schemas/`.
 
 ## Runtime Responsibilities
 
 - validate incoming requests against loaded OpenAPI contracts
+- reject malformed or otherwise unprocessable JSON request bodies when `gateway.schemas.validate-bodies=true`
 - optionally trim JSON responses to schema-defined fields
 - forward requests to configured backends
+- preserve multi-value inbound headers during forwarding while still exposing normalized single-value accessors to resources and auth helpers
 - enrich outbound requests with auth strategies
 - apply outbound truststore and mTLS configuration
 - decode gzipped upstream responses before response parsing and trimming
@@ -137,6 +140,7 @@ The library provides shared auth strategy wiring through `AuthServiceFactory`. S
 Notable behavior:
 
 - `jwt` supports configurable token-to-header mapping, sparse `auth-request` bodies, and optional `authz-request` follow-up calls
+- `jwt` also preserves the legacy default header injection behavior (`X-Glue-Token`, `X-Auth-Z-Token`, `X-Customer-Access-Token`) when no explicit bearer or token-header mapping is configured
 - `jwt` supports auth-request path overrides and authz-request path configuration, including absolute URLs
 - `form` supports both `auth-service` and `inline` modes
 - `form` inline mode expects `application/x-www-form-urlencoded` on the forwarded request
@@ -147,7 +151,9 @@ Auth failures are categorized so applications get clearer responses:
 
 - missing or invalid caller authentication can return `401`
 - authorization denials can return `403`
-- broken or unavailable auth dependencies remain `502`
+- proxy or auth configuration errors can return `500`
+- open circuit breakers can return `503`
+- broken or unavailable upstream or auth dependencies can return `502`
 
 ## Transport Behavior
 
@@ -157,6 +163,7 @@ Auth failures are categorized so applications get clearer responses:
 - optional per-backend outbound proxy settings
 - per-backend HTTP version selection, with `HTTP/1.1` as the safe default
 - response header sanitization before data is returned to the API consumer
+- optional JSON response trimming to the schema-defined contract when enabled by the application
 - sanitized debug logging of outbound backend headers
 
 The auth-service caller uses the same shared transport principles, but auth-service-specific settings remain part of the shared library internals rather than per-backend application config.
