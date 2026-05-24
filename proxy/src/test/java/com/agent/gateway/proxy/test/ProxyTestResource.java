@@ -38,6 +38,15 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
     private static final AtomicInteger FORM_AUTH_CALLS = new AtomicInteger();
     private static final AtomicInteger ORDER_DETAILS_CALLS = new AtomicInteger();
     private static final AtomicInteger PAYMENT_ORDER_CALLS = new AtomicInteger();
+    private static final AtomicReference<String> LAST_CHAINED_ORDER_CORRELATION_ID = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_CHAINED_ORDER_TENANT_ID = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_CHAINED_ORDER_CHANNEL = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_CHAINED_PAYMENT_CORRELATION_ID = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_CHAINED_PAYMENT_TENANT_ID = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_CHAINED_PAYMENT_CHANNEL = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_CHAINED_PAYMENT_TOKEN = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_CHAINED_PAYMENT_CUSTOMER_ID = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_CHAINED_PAYMENT_QUERY = new AtomicReference<>();
 
     @Override
     public Map<String, String> start() {
@@ -64,6 +73,15 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         FORM_AUTH_CALLS.set(0);
         ORDER_DETAILS_CALLS.set(0);
         PAYMENT_ORDER_CALLS.set(0);
+        LAST_CHAINED_ORDER_CORRELATION_ID.set(null);
+        LAST_CHAINED_ORDER_TENANT_ID.set(null);
+        LAST_CHAINED_ORDER_CHANNEL.set(null);
+        LAST_CHAINED_PAYMENT_CORRELATION_ID.set(null);
+        LAST_CHAINED_PAYMENT_TENANT_ID.set(null);
+        LAST_CHAINED_PAYMENT_CHANNEL.set(null);
+        LAST_CHAINED_PAYMENT_TOKEN.set(null);
+        LAST_CHAINED_PAYMENT_CUSTOMER_ID.set(null);
+        LAST_CHAINED_PAYMENT_QUERY.set(null);
         registerBackendHandlers();
         registerAuthHandlers();
 
@@ -346,6 +364,42 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         return PAYMENT_ORDER_CALLS.get();
     }
 
+    public static String getLastChainedOrderCorrelationId() {
+        return LAST_CHAINED_ORDER_CORRELATION_ID.get();
+    }
+
+    public static String getLastChainedOrderTenantId() {
+        return LAST_CHAINED_ORDER_TENANT_ID.get();
+    }
+
+    public static String getLastChainedOrderChannel() {
+        return LAST_CHAINED_ORDER_CHANNEL.get();
+    }
+
+    public static String getLastChainedPaymentCorrelationId() {
+        return LAST_CHAINED_PAYMENT_CORRELATION_ID.get();
+    }
+
+    public static String getLastChainedPaymentTenantId() {
+        return LAST_CHAINED_PAYMENT_TENANT_ID.get();
+    }
+
+    public static String getLastChainedPaymentChannel() {
+        return LAST_CHAINED_PAYMENT_CHANNEL.get();
+    }
+
+    public static String getLastChainedPaymentToken() {
+        return LAST_CHAINED_PAYMENT_TOKEN.get();
+    }
+
+    public static String getLastChainedPaymentCustomerId() {
+        return LAST_CHAINED_PAYMENT_CUSTOMER_ID.get();
+    }
+
+    public static String getLastChainedPaymentQuery() {
+        return LAST_CHAINED_PAYMENT_QUERY.get();
+    }
+
     private void registerBackendHandlers() {
         backendServer.createContext("/internal/secondary/ping", exchange ->
             respond(exchange, 200, "{\"status\":\"secondary-ok\",\"internal\":\"discard-me\"}"));
@@ -408,6 +462,17 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             ORDER_DETAILS_CALLS.incrementAndGet();
             respond(exchange, 200, "{\"id\":\"500\",\"status\":\"READY\",\"internal\":\"discard-me\"}");
         });
+        backendServer.createContext("/orders/details/321", exchange -> {
+            ORDER_DETAILS_CALLS.incrementAndGet();
+            LAST_CHAINED_ORDER_CORRELATION_ID.set(exchange.getRequestHeaders().getFirst("X-Correlation-Id"));
+            LAST_CHAINED_ORDER_TENANT_ID.set(exchange.getRequestHeaders().getFirst("X-Tenant-Id"));
+            LAST_CHAINED_ORDER_CHANNEL.set(exchange.getRequestHeaders().getFirst("X-Client-Channel"));
+            respond(
+                exchange,
+                200,
+                "{\"id\":\"321\",\"status\":\"READY\",\"customerId\":\"cust-321\",\"paymentToken\":\"pay-321\",\"internal\":\"discard-me\"}"
+            );
+        });
         backendServer.createContext("/payments/orders/123", exchange -> {
             PAYMENT_ORDER_CALLS.incrementAndGet();
             respond(exchange, 200, "{\"orderId\":\"123\",\"paymentStatus\":\"PAID\",\"internal\":\"discard-me\"}");
@@ -415,6 +480,16 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         backendServer.createContext("/payments/orders/500", exchange -> {
             PAYMENT_ORDER_CALLS.incrementAndGet();
             respond(exchange, 502, "{\"error\":\"payments-down\",\"internal\":\"discard-me\"}");
+        });
+        backendServer.createContext("/payments/orders/321", exchange -> {
+            PAYMENT_ORDER_CALLS.incrementAndGet();
+            LAST_CHAINED_PAYMENT_CORRELATION_ID.set(exchange.getRequestHeaders().getFirst("X-Correlation-Id"));
+            LAST_CHAINED_PAYMENT_TENANT_ID.set(exchange.getRequestHeaders().getFirst("X-Tenant-Id"));
+            LAST_CHAINED_PAYMENT_CHANNEL.set(exchange.getRequestHeaders().getFirst("X-Client-Channel"));
+            LAST_CHAINED_PAYMENT_TOKEN.set(exchange.getRequestHeaders().getFirst("X-Payment-Token"));
+            LAST_CHAINED_PAYMENT_CUSTOMER_ID.set(exchange.getRequestHeaders().getFirst("X-Customer-Id"));
+            LAST_CHAINED_PAYMENT_QUERY.set(exchange.getRequestURI().getRawQuery());
+            respond(exchange, 200, "{\"orderId\":\"321\",\"paymentStatus\":\"PAID\",\"internal\":\"discard-me\"}");
         });
         backendServer.createContext("/params/search/123", exchange ->
             respond(exchange, 200, "{\"ok\":true,\"debug\":\"discard-me\"}"));

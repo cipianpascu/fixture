@@ -51,3 +51,80 @@ paths:
                   paymentStatus: PAID
         '400':
           description: Request validation failed
+  /api/v1/order-summaries/{id}/compose:
+    post:
+      operationId: composeOrderSummary
+      tags:
+        - Order Summaries
+      summary: Compose a chained order and payment summary
+      description: >
+        Demonstrates a multi-call orchestration flow where selected incoming headers and
+        request-body attributes are forwarded to downstream calls, and fields from the
+        first backend response are injected into the second backend request.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Correlation-Id
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-Tenant-Id
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - channel
+                - includeHistory
+              properties:
+                channel:
+                  type: string
+                includeHistory:
+                  type: boolean
+            example:
+              channel: mobile
+              includeHistory: true
+      responses:
+        '200':
+          description: Combined order and payment summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - order
+                  - payment
+                properties:
+                  order:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      status:
+                        type: string
+                  payment:
+                    type: object
+                    properties:
+                      orderId:
+                        type: string
+                      paymentStatus:
+                        type: string
+              example:
+                order:
+                  id: "321"
+                  status: READY
+                payment:
+                  orderId: "321"
+                  paymentStatus: PAID
+        '400':
+          description: Request validation failed

@@ -3,6 +3,7 @@ package com.agent.gateway.proxy;
 import com.agent.gateway.proxy.test.ProxyTestResource;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.http.ContentType;
 import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.given;
@@ -54,6 +55,14 @@ class OrderSummaryResourceTest extends AbstractProxyQuarkusTest {
             .body(
                 "paths.'/api/v1/order-summaries/{id}'.get.tags[0]",
                 equalTo("Order Summaries")
+            )
+            .body(
+                "paths.'/api/v1/order-summaries/{id}/compose'.post.summary",
+                equalTo("Compose a chained order and payment summary")
+            )
+            .body(
+                "paths.'/api/v1/order-summaries/{id}/compose'.post.requestBody.required",
+                equalTo(true)
             );
     }
 
@@ -71,5 +80,40 @@ class OrderSummaryResourceTest extends AbstractProxyQuarkusTest {
 
         assertEquals(orderCallsBefore + 1, ProxyTestResource.getOrderDetailsCalls());
         assertEquals(paymentCallsBefore + 1, ProxyTestResource.getPaymentOrderCalls());
+    }
+
+    @Test
+    void propagatesHeadersAndPayloadAttributesAcrossChainedBackendCalls() {
+        given()
+            .contentType(ContentType.JSON)
+            .header("X-Correlation-Id", "corr-321")
+            .header("X-Tenant-Id", "tenant-77")
+            .body("""
+                {
+                  "channel": "mobile",
+                  "includeHistory": true
+                }
+                """)
+            .when()
+            .post("/api/v1/order-summaries/321/compose")
+            .then()
+            .statusCode(200)
+            .body("order.id", equalTo("321"))
+            .body("order.status", equalTo("READY"))
+            .body("payment.orderId", equalTo("321"))
+            .body("payment.paymentStatus", equalTo("PAID"))
+            .body("order", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasKey("customerId")))
+            .body("order", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasKey("paymentToken")))
+            .body("payment", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasKey("internal")));
+
+        assertEquals("corr-321", ProxyTestResource.getLastChainedOrderCorrelationId());
+        assertEquals("tenant-77", ProxyTestResource.getLastChainedOrderTenantId());
+        assertEquals("mobile", ProxyTestResource.getLastChainedOrderChannel());
+        assertEquals("corr-321", ProxyTestResource.getLastChainedPaymentCorrelationId());
+        assertEquals("tenant-77", ProxyTestResource.getLastChainedPaymentTenantId());
+        assertEquals("mobile", ProxyTestResource.getLastChainedPaymentChannel());
+        assertEquals("pay-321", ProxyTestResource.getLastChainedPaymentToken());
+        assertEquals("cust-321", ProxyTestResource.getLastChainedPaymentCustomerId());
+        assertEquals("includeHistory=true", ProxyTestResource.getLastChainedPaymentQuery());
     }
 }
