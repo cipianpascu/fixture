@@ -106,11 +106,11 @@ class ProxyServiceProxySelectorTest {
                 "static-headers.x-api-key", "secret-key"
             )),
             Map.of(
-                "authorization", "Bearer token",
-                "cookie", "session=abc",
-                "X-Glue-Token", "glue",
-                "x-api-key", "secret-key",
-                "x-trace-id", "trace-123"
+                "authorization", List.of("Bearer token"),
+                "cookie", List.of("session=abc"),
+                "X-Glue-Token", List.of("glue"),
+                "x-api-key", List.of("secret-key"),
+                "x-trace-id", List.of("trace-123")
             )
         );
 
@@ -122,16 +122,26 @@ class ProxyServiceProxySelectorTest {
     }
 
     @Test
-    void normalizesHeadersCaseInsensitivelyAfterAuthEnrichment() {
-        Map<String, String> normalized = ProxyService.normalizeHeaders(Map.of(
-            "authorization", "Bearer incoming-user-token",
-            "Authorization", "Bearer backend-token",
-            "X-Request-Id", "tx-123"
+    void flattensAndMergesHeadersCaseInsensitivelyAfterAuthEnrichment() {
+        Map<String, String> flattened = ProxyService.flattenHeaders(Map.of(
+            "authorization", List.of("Bearer incoming-user-token"),
+            "Authorization", List.of("Bearer backend-token"),
+            "X-Request-Id", List.of("tx-123")
         ));
 
-        assertEquals(2, normalized.size());
-        assertEquals("Bearer backend-token", normalized.get("authorization"));
-        assertEquals("tx-123", normalized.get("x-request-id"));
+        assertEquals(2, flattened.size());
+        assertEquals("Bearer backend-token", flattened.get("authorization"));
+        assertEquals("tx-123", flattened.get("x-request-id"));
+
+        Map<String, List<String>> merged = ProxyService.mergeAuthHeaders(
+            Map.of("accept", List.of("application/json"), "x-forwarded-for", List.of("1.1.1.1", "2.2.2.2")),
+            Map.of("Authorization", "Bearer backend-token", "X-Request-Id", "tx-123")
+        );
+
+        assertEquals(List.of("application/json"), merged.get("accept"));
+        assertEquals(List.of("1.1.1.1", "2.2.2.2"), merged.get("x-forwarded-for"));
+        assertEquals(List.of("Bearer backend-token"), merged.get("authorization"));
+        assertEquals(List.of("tx-123"), merged.get("x-request-id"));
     }
 
     private ProxyProperties.BackendDefinition backend(String name, ProxyProperties.ProxyConfig proxyConfig) {

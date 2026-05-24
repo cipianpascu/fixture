@@ -542,6 +542,7 @@ public class SchemaLoader {
      */
     public void reload() {
         schemas.clear();
+        documentationSchemas.clear();
         cachedJsonSchemas.clear();
         loadSchemas();
     }

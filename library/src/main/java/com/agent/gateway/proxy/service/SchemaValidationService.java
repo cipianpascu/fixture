@@ -312,8 +312,7 @@ public class SchemaValidationService {
             
         } catch (Exception e) {
             log.error("Error validating request body", e);
-            // Be lenient on validation errors - allow the request
-            return ValidationResult.allowed();
+            return ValidationResult.rejected("Request body validation could not be completed");
         }
     }
 
@@ -354,13 +353,15 @@ public class SchemaValidationService {
         return URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 
-    private String findHeader(Map<String, String> headers, String name) {
+    private String findHeader(Map<String, List<String>> headers, String name) {
         if (headers.containsKey(name)) {
-            return headers.get(name);
+            List<String> values = headers.get(name);
+            return values == null || values.isEmpty() ? null : values.getFirst();
         }
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
+        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
             if (entry.getKey().equalsIgnoreCase(name)) {
-                return entry.getValue();
+                List<String> values = entry.getValue();
+                return values == null || values.isEmpty() ? null : values.getFirst();
             }
         }
         return null;

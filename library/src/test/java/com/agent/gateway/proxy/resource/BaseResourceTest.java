@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -50,6 +51,20 @@ class BaseResourceTest {
         assertEquals("abc", derived.cookie("sessionId"));
         assertNotSame(source.headers(), derived.headers());
         assertNotSame(source.cookies(), derived.cookies());
+    }
+
+    @Test
+    void preservesRepeatedHeadersInRequestContext() {
+        ProxyRequestContext requestContext = resource.buildWithHeaderLists(
+            "GET",
+            "/api/v1/orders/123",
+            null,
+            Map.of("X-Trace-Id", List.of("trace-1", "trace-2")),
+            Map.of()
+        );
+
+        assertEquals(List.of("trace-1", "trace-2"), requestContext.headers().get("x-trace-id"));
+        assertEquals("trace-1", requestContext.header("X-Trace-Id"));
     }
 
     @Test
@@ -246,6 +261,15 @@ class BaseResourceTest {
             Map<String, String> headers,
             Map<String, String> cookies) {
             return buildRequestContext(method, requestUri, queryString, headers, cookies);
+        }
+
+        private ProxyRequestContext buildWithHeaderLists(
+            String method,
+            String requestUri,
+            String queryString,
+            Map<String, List<String>> headers,
+            Map<String, String> cookies) {
+            return buildRequestContextWithHeaderLists(method, requestUri, queryString, headers, cookies);
         }
 
         private ProxyRequestContext derive(

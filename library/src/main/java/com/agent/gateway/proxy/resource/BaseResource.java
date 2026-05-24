@@ -16,6 +16,7 @@ import jakarta.ws.rs.core.UriInfo;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -182,17 +183,17 @@ public abstract class BaseResource {
         UriInfo uriInfo,
         HttpHeaders httpHeaders,
         ContainerRequestContext requestContext) {
-        Map<String, String> headers = new HashMap<>();
+        Map<String, List<String>> headers = new HashMap<>();
         httpHeaders.getRequestHeaders().forEach((key, values) -> {
             if (!values.isEmpty()) {
-                headers.put(key.toLowerCase(Locale.ROOT), values.get(0));
+                headers.put(key.toLowerCase(Locale.ROOT), List.copyOf(values));
             }
         });
 
         Map<String, String> cookies = new HashMap<>();
         httpHeaders.getCookies().forEach((key, cookie) -> cookies.put(key, cookie.getValue()));
 
-        return buildRequestContext(
+        return buildRequestContextWithHeaderLists(
             requestContext.getMethod(),
             uriInfo.getRequestUri().getPath(),
             uriInfo.getRequestUri().getRawQuery(),
@@ -201,14 +202,14 @@ public abstract class BaseResource {
         );
     }
 
-    protected ProxyRequestContext buildRequestContext(
+    protected ProxyRequestContext buildRequestContextWithHeaderLists(
         String method,
         String requestUri,
         String queryString,
-        Map<String, String> headers,
+        Map<String, List<String>> headers,
         Map<String, String> cookies) {
-        Map<String, String> normalizedHeaders = new HashMap<>();
-        headers.forEach((key, value) -> normalizedHeaders.put(key.toLowerCase(Locale.ROOT), value));
+        Map<String, List<String>> normalizedHeaders = new HashMap<>();
+        headers.forEach((key, values) -> normalizedHeaders.put(key.toLowerCase(Locale.ROOT), List.copyOf(values)));
         return new ProxyRequestContext(
             method,
             requestUri,
@@ -218,12 +219,23 @@ public abstract class BaseResource {
         );
     }
 
+    protected ProxyRequestContext buildRequestContext(
+        String method,
+        String requestUri,
+        String queryString,
+        Map<String, String> headers,
+        Map<String, String> cookies) {
+        Map<String, List<String>> normalizedHeaders = new HashMap<>();
+        headers.forEach((key, value) -> normalizedHeaders.put(key.toLowerCase(Locale.ROOT), List.of(value)));
+        return buildRequestContextWithHeaderLists(method, requestUri, queryString, normalizedHeaders, cookies);
+    }
+
     protected ProxyRequestContext deriveRequestContext(
         ProxyRequestContext source,
         String method,
         String requestUri,
         String queryString) {
-        return buildRequestContext(
+        return buildRequestContextWithHeaderLists(
             method != null ? method : source.method(),
             requestUri != null ? requestUri : source.requestUri(),
             queryString != null ? queryString : source.queryString(),

@@ -35,6 +35,7 @@ import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.List;
 import java.util.Optional;
@@ -118,13 +119,14 @@ public class ProxyService {
             log.info("Forwarding {} request to: {}", request.method(), targetUrl);
             
             // Build headers
-            Map<String, String> headers = buildHeaders(request);
+            Map<String, List<String>> headers = buildHeaders(request);
             
             // Get appropriate auth service for this backend and enrich headers
             AuthService authService = authServiceFactory.createAuthService(backend);
-            authService.enrichHeaders(request, headers, requestBody);
-            headers = normalizeHeaders(headers);
-            String outboundRequestBody = authService.transformRequestBody(request, headers, requestBody);
+            Map<String, String> authHeaders = flattenHeaders(headers);
+            authService.enrichHeaders(request, authHeaders, requestBody);
+            String outboundRequestBody = authService.transformRequestBody(request, authHeaders, requestBody);
+            headers = mergeAuthHeaders(headers, authHeaders);
             logBackendHeaders(backend, targetUrl, headers);
             
             // Build HTTP request
@@ -133,7 +135,7 @@ public class ProxyService {
                 .timeout(backend.timeout());
             
             // Add headers
-            headers.forEach(requestBuilder::header);
+            headers.forEach((name, values) -> values.forEach(value -> requestBuilder.header(name, value)));
             
             // Set method and body
             HttpRequest.BodyPublisher bodyPublisher = outboundRequestBody != null && !outboundRequestBody.isEmpty()
@@ -249,26 +251,39 @@ public class ProxyService {
     /**
      * Build HTTP headers from request
      */
-    private Map<String, String> buildHeaders(ProxyRequestContext request) {
-        Map<String, String> headers = new HashMap<>(request.headers());
+    private Map<String, List<String>> buildHeaders(ProxyRequestContext request) {
+        Map<String, List<String>> headers = new HashMap<>(request.headers());
         headers.entrySet().removeIf(entry ->
             HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT)));
         return headers;
     }
 
-    static Map<String, String> normalizeHeaders(Map<String, String> headers) {
-        Map<String, String> normalized = new LinkedHashMap<>();
+    static Map<String, String> flattenHeaders(Map<String, List<String>> headers) {
+        Map<String, String> flattened = new LinkedHashMap<>();
         headers.forEach((key, value) -> {
             if (key == null) {
                 return;
             }
-            String normalizedKey = key.toLowerCase(Locale.ROOT);
-            String existingValue = normalized.get(normalizedKey);
-            if (existingValue == null || !key.equals(normalizedKey)) {
-                normalized.put(normalizedKey, value);
+            if (value == null || value.isEmpty()) {
+                return;
             }
+            flattened.put(key.toLowerCase(Locale.ROOT), value.getLast());
         });
-        return normalized;
+        return flattened;
+    }
+
+    static Map<String, List<String>> mergeAuthHeaders(
+        Map<String, List<String>> originalHeaders,
+        Map<String, String> authHeaders) {
+        Map<String, List<String>> merged = new LinkedHashMap<>();
+        originalHeaders.forEach((key, values) -> merged.put(key.toLowerCase(Locale.ROOT), new ArrayList<>(values)));
+        authHeaders.forEach((key, value) -> {
+            if (key == null) {
+                return;
+            }
+            merged.put(key.toLowerCase(Locale.ROOT), new ArrayList<>(List.of(value)));
+        });
+        return merged;
     }
 
     private HttpClient getHttpClient(ProxyProperties.BackendDefinition backend) {
@@ -362,7 +377,7 @@ public class ProxyService {
     private void logBackendHeaders(
         ProxyProperties.BackendDefinition backend,
         String targetUrl,
-        Map<String, String> headers) {
+        Map<String, List<String>> headers) {
         if (!log.isDebugEnabled()) {
             return;
         }
@@ -376,13 +391,14 @@ public class ProxyService {
 
     static Map<String, String> sanitizeHeadersForLogging(
         ProxyProperties.BackendDefinition backend,
-        Map<String, String> headers) {
+        Map<String, List<String>> headers) {
         Set<String> sensitiveHeaders = sensitiveRequestHeaders(backend);
         Map<String, String> sanitized = new HashMap<>();
-        headers.forEach((name, value) -> {
+        headers.forEach((name, values) -> {
             if (name == null) {
                 return;
             }
+            String value = values == null || values.isEmpty() ? null : values.getLast();
             if (sensitiveHeaders.contains(name.toLowerCase(Locale.ROOT))) {
                 sanitized.put(name, MASKED_VALUE);
             } else {

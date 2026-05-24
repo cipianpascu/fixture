@@ -42,6 +42,19 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
     }
 
     @Test
+    void rejectsMalformedJsonWhenBodyValidationIsEnabled() {
+        given()
+            .contentType(ContentType.JSON)
+            .body("{")
+            .when()
+            .put("/api/v1/templated-service/items/123")
+            .then()
+            .statusCode(400)
+            .body("error", equalTo("Request validation failed"))
+            .body("details.toString()", containsString("could not be completed"));
+    }
+
+    @Test
     void handlesRecursiveRequestSchemasWithoutFailingStartup() {
         given()
             .contentType(ContentType.JSON)
