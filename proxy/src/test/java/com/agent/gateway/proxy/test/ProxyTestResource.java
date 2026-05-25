@@ -47,6 +47,9 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
     private static final AtomicReference<String> LAST_CHAINED_PAYMENT_TOKEN = new AtomicReference<>();
     private static final AtomicReference<String> LAST_CHAINED_PAYMENT_CUSTOMER_ID = new AtomicReference<>();
     private static final AtomicReference<String> LAST_CHAINED_PAYMENT_QUERY = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_SOAP_AUTH_TOKEN = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_SOAP_ACTION = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_SOAP_METHOD = new AtomicReference<>();
 
     @Override
     public Map<String, String> start() {
@@ -82,6 +85,9 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         LAST_CHAINED_PAYMENT_TOKEN.set(null);
         LAST_CHAINED_PAYMENT_CUSTOMER_ID.set(null);
         LAST_CHAINED_PAYMENT_QUERY.set(null);
+        LAST_SOAP_AUTH_TOKEN.set(null);
+        LAST_SOAP_ACTION.set(null);
+        LAST_SOAP_METHOD.set(null);
         registerBackendHandlers();
         registerAuthHandlers();
 
@@ -281,11 +287,25 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[18].auth-request.path", "/custom-auth/tokens/{sessionId}");
         config.put("gateway.backends[18].auth-request.btx[0]", "FirstFunction");
 
+        config.put("gateway.backends[19].name", "customer-profile-soap-service");
+        config.put("gateway.backends[19].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[19].path", "/soap/customer-profile");
+        config.put("gateway.backends[19].schema", "customer-profile.yaml");
+        config.put("gateway.backends[19].enabled", "true");
+        config.put("gateway.backends[19].protocol", "soap");
+        config.put("gateway.backends[19].securityType", "jwt");
+        config.put("gateway.backends[19].auth-request.btx[0]", "FirstFunction");
+        config.put("gateway.backends[19].soap.version", "1.1");
+        config.put("gateway.backends[19].soap.soap-action", "urn:GetCustomerProfile");
+
         config.put("gateway.resources.order-summary.schema", "order-summary.yaml");
         config.put("gateway.resources.order-summary.orders-backend", "orders-service");
         config.put("gateway.resources.order-summary.orders-path-template", "/details/{id}");
         config.put("gateway.resources.order-summary.payments-backend", "payments-service");
         config.put("gateway.resources.order-summary.payments-path-template", "/orders/{id}");
+        config.put("gateway.resources.customer-profile.schema", "customer-profile.yaml");
+        config.put("gateway.resources.customer-profile.backend", "customer-profile-soap-service");
+        config.put("gateway.resources.customer-profile.soap-action", "urn:GetCustomerProfile");
 
         return config;
     }
@@ -400,6 +420,18 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         return LAST_CHAINED_PAYMENT_QUERY.get();
     }
 
+    public static String getLastSoapAuthToken() {
+        return LAST_SOAP_AUTH_TOKEN.get();
+    }
+
+    public static String getLastSoapAction() {
+        return LAST_SOAP_ACTION.get();
+    }
+
+    public static String getLastSoapMethod() {
+        return LAST_SOAP_METHOD.get();
+    }
+
     private void registerBackendHandlers() {
         backendServer.createContext("/internal/secondary/ping", exchange ->
             respond(exchange, 200, "{\"status\":\"secondary-ok\",\"internal\":\"discard-me\"}"));
@@ -490,6 +522,61 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             LAST_CHAINED_PAYMENT_CUSTOMER_ID.set(exchange.getRequestHeaders().getFirst("X-Customer-Id"));
             LAST_CHAINED_PAYMENT_QUERY.set(exchange.getRequestURI().getRawQuery());
             respond(exchange, 200, "{\"orderId\":\"321\",\"paymentStatus\":\"PAID\",\"internal\":\"discard-me\"}");
+        });
+        backendServer.createContext("/soap/customer-profile", exchange -> {
+            LAST_SOAP_AUTH_TOKEN.set(exchange.getRequestHeaders().getFirst("X-Customer-Access-Token"));
+            LAST_SOAP_ACTION.set(exchange.getRequestHeaders().getFirst("SOAPAction"));
+            LAST_SOAP_METHOD.set(exchange.getRequestMethod());
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            if (body.contains("<customerId>fault</customerId>")) {
+                respondXml(
+                    exchange,
+                    500,
+                    """
+                        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+                          <soapenv:Body>
+                            <soapenv:Fault>
+                              <faultcode>soapenv:Server</faultcode>
+                              <faultstring>customer profile unavailable</faultstring>
+                            </soapenv:Fault>
+                          </soapenv:Body>
+                        </soapenv:Envelope>
+                        """
+                );
+                return;
+            }
+            if (!body.contains("<customerId>321</customerId>")) {
+                respondXml(
+                    exchange,
+                    400,
+                    """
+                        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+                          <soapenv:Body>
+                            <soapenv:Fault>
+                              <faultcode>soapenv:Client</faultcode>
+                              <faultstring>unexpected request</faultstring>
+                            </soapenv:Fault>
+                          </soapenv:Body>
+                        </soapenv:Envelope>
+                        """
+                );
+                return;
+            }
+            respondXml(
+                exchange,
+                200,
+                """
+                    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:cp="http://agent.com/customerprofile">
+                      <soapenv:Body>
+                        <cp:GetCustomerProfileResponse>
+                          <cp:customerId>321</cp:customerId>
+                          <cp:fullName>Jane Doe</cp:fullName>
+                          <cp:segment>GOLD</cp:segment>
+                        </cp:GetCustomerProfileResponse>
+                      </soapenv:Body>
+                    </soapenv:Envelope>
+                    """
+            );
         });
         backendServer.createContext("/params/search/123", exchange ->
             respond(exchange, 200, "{\"ok\":true,\"debug\":\"discard-me\"}"));
@@ -712,6 +799,17 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
     private static void respond(HttpExchange exchange, int statusCode, String body) throws IOException {
         byte[] payload = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(statusCode, payload.length);
+        try (OutputStream outputStream = exchange.getResponseBody()) {
+            outputStream.write(payload);
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private static void respondXml(HttpExchange exchange, int statusCode, String body) throws IOException {
+        byte[] payload = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().add("Content-Type", "text/xml; charset=utf-8");
         exchange.sendResponseHeaders(statusCode, payload.length);
         try (OutputStream outputStream = exchange.getResponseBody()) {
             outputStream.write(payload);

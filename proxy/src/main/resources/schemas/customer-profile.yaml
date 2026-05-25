@@ -1,0 +1,42 @@
+openapi: 3.0.0
+info:
+  title: Customer Profile API
+  version: 1.0.0
+
+paths:
+  /api/v1/customer-profiles/{id}:
+    get:
+      operationId: getCustomerProfile
+      tags:
+        - Customer Profiles
+      summary: Get a customer profile from a SOAP backend
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Customer profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - fullName
+                  - segment
+                properties:
+                  id:
+                    type: string
+                  fullName:
+                    type: string
+                  segment:
+                    type: string
+              example:
+                id: "321"
+                fullName: Jane Doe
+                segment: GOLD
+        '400':
+          description: Request validation failed

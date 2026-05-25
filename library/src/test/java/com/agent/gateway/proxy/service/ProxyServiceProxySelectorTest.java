@@ -123,11 +123,11 @@ class ProxyServiceProxySelectorTest {
 
     @Test
     void flattensAndMergesHeadersCaseInsensitivelyAfterAuthEnrichment() {
-        Map<String, String> flattened = ProxyService.flattenHeaders(Map.of(
-            "authorization", List.of("Bearer incoming-user-token"),
-            "Authorization", List.of("Bearer backend-token"),
-            "X-Request-Id", List.of("tx-123")
-        ));
+        Map<String, List<String>> originalHeaders = new java.util.LinkedHashMap<>();
+        originalHeaders.put("authorization", List.of("Bearer incoming-user-token"));
+        originalHeaders.put("Authorization", List.of("Bearer backend-token"));
+        originalHeaders.put("X-Request-Id", List.of("tx-123"));
+        Map<String, String> flattened = ProxyService.flattenHeaders(originalHeaders);
 
         assertEquals(2, flattened.size());
         assertEquals("Bearer backend-token", flattened.get("authorization"));
@@ -192,6 +192,11 @@ class ProxyServiceProxySelectorTest {
             }
 
             @Override
+            public String protocol() {
+                return "rest";
+            }
+
+            @Override
             public String httpVersion() {
                 return httpVersion;
             }
@@ -218,6 +223,11 @@ class ProxyServiceProxySelectorTest {
 
             @Override
             public Optional<String> tlsProfile() {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<ProxyProperties.SoapConfig> soap() {
                 return Optional.empty();
             }
 

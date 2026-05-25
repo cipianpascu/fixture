@@ -217,6 +217,11 @@ class BaseResourceTest {
             }
 
             @Override
+            public String protocol() {
+                return "rest";
+            }
+
+            @Override
             public String httpVersion() {
                 return "http1_1";
             }
@@ -243,6 +248,11 @@ class BaseResourceTest {
 
             @Override
             public Optional<String> tlsProfile() {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<ProxyProperties.SoapConfig> soap() {
                 return Optional.empty();
             }
 

@@ -50,7 +50,7 @@ import java.util.zip.GZIPInputStream;
 @Slf4j
 public class ProxyService {
 
-    private static final Set<String> HOP_BY_HOP_HEADERS = Set.of(
+    static final Set<String> HOP_BY_HOP_HEADERS = Set.of(
         "connection",
         "content-length",
         "expect",
@@ -78,6 +78,9 @@ public class ProxyService {
 
     @Inject
     TlsContextFactory tlsContextFactory;
+
+    @Inject
+    BackendInvocationFailureMapper failureMapper;
 
     private final Map<String, HttpClient> httpClients = new ConcurrentHashMap<>();
     
@@ -187,41 +190,7 @@ public class ProxyService {
             ProxyRequestContext request,
             String requestBody,
             Throwable failure) {
-        log.error("Proxy forwarding failed for backend {} after fault-tolerance handling", backend.name(), failure);
-
-        if (failure instanceof ProxyConfigurationException configurationException) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                .entity(Map.of("error", configurationException.getMessage()))
-                .build();
-        }
-
-        if (failure instanceof AuthenticationRequiredException authenticationRequiredException) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(Map.of("error", authenticationRequiredException.getMessage()))
-                .build();
-        }
-
-        if (failure instanceof AuthenticationDeniedException authenticationDeniedException) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(Map.of("error", authenticationDeniedException.getMessage()))
-                .build();
-        }
-
-        if (failure instanceof AuthorizationDeniedException authorizationDeniedException) {
-            return Response.status(Response.Status.FORBIDDEN)
-                .entity(Map.of("error", authorizationDeniedException.getMessage()))
-                .build();
-        }
-
-        if (failure instanceof CircuitBreakerOpenException) {
-            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                .entity(Map.of("error", "Backend '%s' is temporarily unavailable".formatted(backend.name())))
-                .build();
-        }
-
-        return Response.status(Response.Status.BAD_GATEWAY)
-            .entity(Map.of("error", "Failed to forward request to backend '%s'".formatted(backend.name())))
-            .build();
+        return failureMapper.toResponse(backend.name(), failure, "Failed to forward request to backend '%s'");
     }
     
     /**

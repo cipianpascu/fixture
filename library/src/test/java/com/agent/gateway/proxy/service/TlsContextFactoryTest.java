@@ -182,6 +182,11 @@ class TlsContextFactoryTest {
             }
 
             @Override
+            public String protocol() {
+                return "rest";
+            }
+
+            @Override
             public String httpVersion() {
                 return "http1_1";
             }
@@ -209,6 +214,11 @@ class TlsContextFactoryTest {
             @Override
             public Optional<String> tlsProfile() {
                 return Optional.of(tlsProfile);
+            }
+
+            @Override
+            public Optional<ProxyProperties.SoapConfig> soap() {
+                return Optional.empty();
             }
 
             @Override

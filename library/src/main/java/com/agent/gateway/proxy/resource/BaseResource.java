@@ -2,8 +2,10 @@ package com.agent.gateway.proxy.resource;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
+import com.agent.gateway.proxy.service.BackendInvocationFailureMapper;
 import com.agent.gateway.proxy.service.ProxyService;
 import com.agent.gateway.proxy.service.SchemaValidationService;
+import com.agent.gateway.proxy.service.SoapBackendService;
 import com.agent.gateway.proxy.validation.ValidationResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,7 +16,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import lombok.extern.slf4j.Slf4j;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -34,6 +35,12 @@ public abstract class BaseResource {
 
     @Inject
     protected ProxyService proxyService;
+
+    @Inject
+    protected SoapBackendService soapBackendService;
+
+    @Inject
+    protected BackendInvocationFailureMapper backendInvocationFailureMapper;
 
     protected ProxyProperties.BackendDefinition findBackend(String name) {
         return proxyProperties.backends().stream()
@@ -93,6 +100,10 @@ public abstract class BaseResource {
 
         if (!isBackendEnabled(backend)) {
             return backendDisabled(backendName);
+        }
+
+        if (!supportsDefaultProxy(backend)) {
+            return protocolNotSupported(backendName, backend.protocol());
         }
 
         if (proxyProperties.schemas().validateRequests()) {
@@ -177,6 +188,29 @@ public abstract class BaseResource {
                 "details", validation.getErrors()
             ))
             .build();
+    }
+
+    protected boolean supportsDefaultProxy(ProxyProperties.BackendDefinition backend) {
+        return backend != null && "rest".equalsIgnoreCase(backend.protocol());
+    }
+
+    protected Response protocolNotSupported(String backendName, String protocol) {
+        log.warn("Backend {} uses unsupported default-proxy protocol {}", backendName, protocol);
+        return Response.status(Response.Status.BAD_REQUEST)
+            .entity(Map.of(
+                "error",
+                "Backend '%s' uses protocol '%s' and must be handled by a concrete resource"
+                    .formatted(backendName, protocol)
+            ))
+            .build();
+    }
+
+    protected Response backendInvocationFailed(String backendName, Throwable failure) {
+        return backendInvocationFailureMapper.toResponse(
+            backendName,
+            failure,
+            "Failed to invoke backend '%s'"
+        );
     }
 
     protected ProxyRequestContext toRequestContext(

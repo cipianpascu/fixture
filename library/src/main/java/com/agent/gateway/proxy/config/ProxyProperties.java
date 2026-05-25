@@ -124,6 +124,9 @@ public interface ProxyProperties {
         @WithDefault("true")
         boolean enabled();
 
+        @WithDefault("rest")
+        String protocol();
+
         @WithName("http-version")
         @WithDefault("http1_1")
         String httpVersion();
@@ -143,7 +146,17 @@ public interface ProxyProperties {
         @WithName("tls-profile")
         Optional<String> tlsProfile();
 
+        Optional<SoapConfig> soap();
+
         Optional<ProxyConfig> proxy();
+    }
+
+    interface SoapConfig {
+        @WithDefault("1.1")
+        String version();
+
+        @WithName("soap-action")
+        Optional<String> soapAction();
     }
 
     interface ProxyConfig {
