@@ -68,6 +68,23 @@ class BaseResourceTest {
     }
 
     @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void normalizesRawHeaderMapsThatContainScalarValues() {
+        Map rawHeaders = Map.of("X-Trace-Id", "trace-1");
+
+        ProxyRequestContext requestContext = new ProxyRequestContext(
+            "GET",
+            "/api/v1/orders/123",
+            null,
+            rawHeaders,
+            Map.of()
+        );
+
+        assertEquals(List.of("trace-1"), requestContext.headers().get("x-trace-id"));
+        assertEquals("trace-1", requestContext.header("X-Trace-Id"));
+    }
+
+    @Test
     void extractsContractPathFromConfiguredPrefix() {
         assertEquals(
             "/items/123",

@@ -353,18 +353,37 @@ public class SchemaValidationService {
         return URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 
-    private String findHeader(Map<String, List<String>> headers, String name) {
-        if (headers.containsKey(name)) {
-            List<String> values = headers.get(name);
-            return values == null || values.isEmpty() ? null : values.getFirst();
+    private String findHeader(Map<String, ?> headers, String name) {
+        if (headers == null || headers.isEmpty()) {
+            return null;
         }
-        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
+        if (headers.containsKey(name)) {
+            return firstHeaderValue(headers.get(name));
+        }
+        for (Map.Entry<String, ?> entry : headers.entrySet()) {
             if (entry.getKey().equalsIgnoreCase(name)) {
-                List<String> values = entry.getValue();
-                return values == null || values.isEmpty() ? null : values.getFirst();
+                return firstHeaderValue(entry.getValue());
             }
         }
         return null;
+    }
+
+    private String firstHeaderValue(Object rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        if (rawValue instanceof List<?> list) {
+            return list.isEmpty() || list.getFirst() == null ? null : list.getFirst().toString();
+        }
+        if (rawValue instanceof Iterable<?> iterable) {
+            Iterator<?> iterator = iterable.iterator();
+            if (!iterator.hasNext()) {
+                return null;
+            }
+            Object value = iterator.next();
+            return value == null ? null : value.toString();
+        }
+        return rawValue.toString();
     }
 
     private List<String> optionalList(String value) {
