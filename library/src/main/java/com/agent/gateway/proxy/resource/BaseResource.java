@@ -2,10 +2,8 @@ package com.agent.gateway.proxy.resource;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
-import com.agent.gateway.proxy.service.BackendInvocationFailureMapper;
 import com.agent.gateway.proxy.service.ProxyService;
 import com.agent.gateway.proxy.service.SchemaValidationService;
-import com.agent.gateway.proxy.service.SoapBackendService;
 import com.agent.gateway.proxy.validation.ValidationResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,12 +33,6 @@ public abstract class BaseResource {
 
     @Inject
     protected ProxyService proxyService;
-
-    @Inject
-    protected SoapBackendService soapBackendService;
-
-    @Inject
-    protected BackendInvocationFailureMapper backendInvocationFailureMapper;
 
     protected ProxyProperties.BackendDefinition findBackend(String name) {
         return proxyProperties.backends().stream()
@@ -203,14 +195,6 @@ public abstract class BaseResource {
                     .formatted(backendName, protocol)
             ))
             .build();
-    }
-
-    protected Response backendInvocationFailed(String backendName, Throwable failure) {
-        return backendInvocationFailureMapper.toResponse(
-            backendName,
-            failure,
-            "Failed to invoke backend '%s'"
-        );
     }
 
     protected ProxyRequestContext toRequestContext(

@@ -3,9 +3,9 @@ package com.agent.gateway.proxy.app.resource;
 import com.agent.gateway.proxy.app.config.CustomerProfileResourceConfig;
 import com.agent.gateway.proxy.app.soap.generated.customerprofile.GetCustomerProfileRequest;
 import com.agent.gateway.proxy.app.soap.generated.customerprofile.GetCustomerProfileResponse;
-import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.resource.BaseResource;
+import com.agent.gateway.proxy.service.SoapRestBridgeService;
 import com.agent.gateway.proxy.validation.ValidationResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -31,6 +31,9 @@ public class CustomerProfileResource extends BaseResource {
     @Inject
     CustomerProfileResourceConfig resourceConfig;
 
+    @Inject
+    SoapRestBridgeService soapRestBridgeService;
+
     @GET
     @Path("/{id}")
     @Produces(MediaType.APPLICATION_JSON)
@@ -49,34 +52,29 @@ public class CustomerProfileResource extends BaseResource {
             }
         }
 
-        ProxyProperties.BackendDefinition backend = findBackend(resourceConfig.backend());
-        if (backend == null) {
-            return backendNotFound(resourceConfig.backend());
-        }
-        if (!isBackendEnabled(backend)) {
-            return backendDisabled(resourceConfig.backend());
-        }
-
-        GetCustomerProfileRequest soapRequest = new GetCustomerProfileRequest();
-        soapRequest.setCustomerId(id);
-
-        try {
-            GetCustomerProfileResponse soapResponse = soapBackendService.invoke(
-                backend,
+        return soapRestBridgeService.invoke(
+            resourceConfig.backend(),
+            incomingRequest,
+            id,
+            customerId -> {
+                GetCustomerProfileRequest soapRequest = new GetCustomerProfileRequest();
+                soapRequest.setCustomerId(customerId);
+                return new SoapRestBridgeService.SoapInvocation<>(
+                    soapRequest,
+                    resourceConfig.soapAction().orElse(null),
+                    GetCustomerProfileResponse.class
+                );
+            },
+            soapResponse -> applyResponseContract(
+                resourceConfig.schema(),
+                contractPath,
                 incomingRequest,
-                soapRequest,
-                resourceConfig.soapAction().orElse(null),
-                GetCustomerProfileResponse.class
-            );
-
-            Response response = Response.ok(Map.of(
-                "id", soapResponse.getCustomerId(),
-                "fullName", soapResponse.getFullName(),
-                "segment", soapResponse.getSegment()
-            )).type(MediaType.APPLICATION_JSON).build();
-            return applyResponseContract(resourceConfig.schema(), contractPath, incomingRequest, response);
-        } catch (RuntimeException e) {
-            return backendInvocationFailed(resourceConfig.backend(), e);
-        }
+                Response.ok(Map.of(
+                    "id", soapResponse.getCustomerId(),
+                    "fullName", soapResponse.getFullName(),
+                    "segment", soapResponse.getSegment()
+                )).type(MediaType.APPLICATION_JSON).build()
+            )
+        );
     }
 }
