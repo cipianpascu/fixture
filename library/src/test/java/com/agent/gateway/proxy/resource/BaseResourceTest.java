@@ -85,6 +85,41 @@ class BaseResourceTest {
     }
 
     @Test
+    void updatesHeadersImmutably() {
+        ProxyRequestContext source = resource.build(
+            "GET",
+            "/api/v1/orders/123",
+            null,
+            Map.of("X-Trace-Id", "trace-1"),
+            Map.of()
+        );
+
+        ProxyRequestContext updated = source.withHeader("X-Trace-Id", "trace-2");
+
+        assertEquals("trace-1", source.header("X-Trace-Id"));
+        assertEquals("trace-2", updated.header("X-Trace-Id"));
+        assertEquals(List.of("trace-2"), updated.headers().get("x-trace-id"));
+        assertNotSame(source.headers(), updated.headers());
+    }
+
+    @Test
+    void removesHeadersWhenUpdatedToNull() {
+        ProxyRequestContext source = resource.build(
+            "GET",
+            "/api/v1/orders/123",
+            null,
+            Map.of("X-Trace-Id", "trace-1"),
+            Map.of()
+        );
+
+        ProxyRequestContext updated = source.withHeader("X-Trace-Id", null);
+
+        assertEquals("trace-1", source.header("X-Trace-Id"));
+        assertEquals(null, updated.header("X-Trace-Id"));
+        assertFalse(updated.headers().containsKey("x-trace-id"));
+    }
+
+    @Test
     void extractsContractPathFromConfiguredPrefix() {
         assertEquals(
             "/items/123",
