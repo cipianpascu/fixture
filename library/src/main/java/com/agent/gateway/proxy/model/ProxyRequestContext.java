@@ -34,34 +34,6 @@ public record ProxyRequestContext(
         return cookies.get(name);
     }
 
-    public ProxyRequestContext withHeader(String name, String value) {
-        if (value == null) {
-            return withHeaderValues(name, List.of());
-        }
-        return withHeaderValues(name, List.of(value));
-    }
-
-    public ProxyRequestContext withHeaderValues(String name, List<String> values) {
-        if (name == null || name.isBlank()) {
-            return this;
-        }
-
-        Map<String, List<String>> updatedHeaders = new LinkedHashMap<>(headers);
-        String normalizedName = name.toLowerCase(Locale.ROOT);
-        if (values == null || values.isEmpty()) {
-            updatedHeaders.remove(normalizedName);
-        } else {
-            List<String> normalizedValues = normalizeHeaderValues(values);
-            if (normalizedValues.isEmpty()) {
-                updatedHeaders.remove(normalizedName);
-            } else {
-                updatedHeaders.put(normalizedName, List.copyOf(normalizedValues));
-            }
-        }
-
-        return new ProxyRequestContext(method, requestUri, queryString, updatedHeaders, cookies);
-    }
-
     @SuppressWarnings("unchecked")
     private static Map<String, List<String>> normalizeHeaders(Map<String, List<String>> headers) {
         if (headers == null || headers.isEmpty()) {
