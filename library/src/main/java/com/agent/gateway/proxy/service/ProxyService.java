@@ -59,6 +59,11 @@ public class ProxyService {
         "upgrade"
     );
 
+    static final Set<String> NON_FORWARDED_REQUEST_HEADERS = Set.of(
+        "accept-encoding",
+        "content-encoding"
+    );
+
     private static final Set<String> SENSITIVE_RESPONSE_HEADERS = Set.of(
         "authorization",
         "proxy-authorization",
@@ -223,7 +228,8 @@ public class ProxyService {
     private Map<String, List<String>> buildHeaders(ProxyRequestContext request) {
         Map<String, List<String>> headers = new HashMap<>(request.headers());
         headers.entrySet().removeIf(entry ->
-            HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT)));
+            HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT))
+                || NON_FORWARDED_REQUEST_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT)));
         return headers;
     }
 

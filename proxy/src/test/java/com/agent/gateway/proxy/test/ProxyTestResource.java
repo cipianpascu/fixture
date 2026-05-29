@@ -50,6 +50,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
     private static final AtomicReference<String> LAST_SOAP_AUTH_TOKEN = new AtomicReference<>();
     private static final AtomicReference<String> LAST_SOAP_ACTION = new AtomicReference<>();
     private static final AtomicReference<String> LAST_SOAP_METHOD = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_COMPRESSION_SENSITIVE_ACCEPT_ENCODING = new AtomicReference<>();
 
     @Override
     public Map<String, String> start() {
@@ -88,6 +89,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         LAST_SOAP_AUTH_TOKEN.set(null);
         LAST_SOAP_ACTION.set(null);
         LAST_SOAP_METHOD.set(null);
+        LAST_COMPRESSION_SENSITIVE_ACCEPT_ENCODING.set(null);
         registerBackendHandlers();
         registerAuthHandlers();
 
@@ -298,6 +300,13 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[19].soap.version", "1.1");
         config.put("gateway.backends[19].soap.soap-action", "urn:GetCustomerProfile");
 
+        config.put("gateway.backends[20].name", "compression-sensitive-service");
+        config.put("gateway.backends[20].baseUrl", backendBaseUrl);
+        config.put("gateway.backends[20].path", "/compression");
+        config.put("gateway.backends[20].schema", "secondary-service.yaml");
+        config.put("gateway.backends[20].enabled", "true");
+        config.put("gateway.backends[20].securityType", "none");
+
         return config;
     }
 
@@ -421,6 +430,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
 
     public static String getLastSoapMethod() {
         return LAST_SOAP_METHOD.get();
+    }
+
+    public static String getLastCompressionSensitiveAcceptEncoding() {
+        return LAST_COMPRESSION_SENSITIVE_ACCEPT_ENCODING.get();
     }
 
     private void registerBackendHandlers() {
@@ -573,6 +586,14 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             respond(exchange, 200, "{\"ok\":true,\"debug\":\"discard-me\"}"));
         backendServer.createContext("/recursive/tree", exchange ->
             respond(exchange, 200, "{\"ok\":true}"));
+        backendServer.createContext("/compression/ping", exchange -> {
+            LAST_COMPRESSION_SENSITIVE_ACCEPT_ENCODING.set(exchange.getRequestHeaders().getFirst("Accept-Encoding"));
+            if (LAST_COMPRESSION_SENSITIVE_ACCEPT_ENCODING.get() != null) {
+                respond(exchange, 415, "{\"error\":\"unsupported accept-encoding\"}");
+                return;
+            }
+            respond(exchange, 200, "{\"status\":\"compression-ok\",\"internal\":\"discard-me\"}");
+        });
     }
 
     private void registerAuthHandlers() {

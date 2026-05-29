@@ -29,6 +29,19 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
     }
 
     @Test
+    void doesNotForwardIncomingAcceptEncodingToBackends() {
+        given()
+            .header("Accept-Encoding", "gzip")
+            .when()
+            .get("/api/v1/compression-sensitive-service/ping")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("compression-ok"));
+
+        assertNull(ProxyTestResource.getLastCompressionSensitiveAcceptEncoding());
+    }
+
+    @Test
     void validatesRequestBodiesForTemplatedPaths() {
         given()
             .contentType(ContentType.JSON)

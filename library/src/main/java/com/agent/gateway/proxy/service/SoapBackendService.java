@@ -150,7 +150,8 @@ public class SoapBackendService {
     private Map<String, List<String>> buildHeaders(ProxyRequestContext request) {
         Map<String, List<String>> headers = new LinkedHashMap<>(request.headers());
         headers.entrySet().removeIf(entry ->
-            ProxyService.HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT)));
+            ProxyService.HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT))
+                || ProxyService.NON_FORWARDED_REQUEST_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT)));
         return headers;
     }
 

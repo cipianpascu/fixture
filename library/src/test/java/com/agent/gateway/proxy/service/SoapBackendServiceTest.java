@@ -42,11 +42,13 @@ class SoapBackendServiceTest {
     void invokesSoapBackendWithPostAndSoapAction() throws Exception {
         AtomicReference<String> lastMethod = new AtomicReference<>();
         AtomicReference<String> lastSoapAction = new AtomicReference<>();
+        AtomicReference<String> lastAcceptEncoding = new AtomicReference<>();
         AtomicReference<String> lastBody = new AtomicReference<>();
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/soap/customer-profile", exchange -> {
             lastMethod.set(exchange.getRequestMethod());
             lastSoapAction.set(exchange.getRequestHeaders().getFirst("SOAPAction"));
+            lastAcceptEncoding.set(exchange.getRequestHeaders().getFirst("Accept-Encoding"));
             lastBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             respond(
                 exchange,
@@ -82,6 +84,7 @@ class SoapBackendServiceTest {
 
         assertEquals("POST", lastMethod.get());
         assertEquals("\"urn:GetCustomerProfile\"", lastSoapAction.get());
+        assertEquals(null, lastAcceptEncoding.get());
         assertEquals("321", response.getCustomerId());
         assertEquals("Jane Doe", response.getFullName());
         org.junit.jupiter.api.Assertions.assertTrue(lastBody.get().contains("<customerId>321</customerId>"));
@@ -142,7 +145,10 @@ class SoapBackendServiceTest {
             "GET",
             "/api/v1/customer-profiles/321",
             null,
-            new LinkedHashMap<>(Map.of("x-session-id", List.of("soap-session"))),
+            new LinkedHashMap<>(Map.of(
+                "x-session-id", List.of("soap-session"),
+                "accept-encoding", List.of("gzip")
+            )),
             Map.of()
         );
     }
