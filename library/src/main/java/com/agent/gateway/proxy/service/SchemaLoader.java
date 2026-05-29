@@ -1,7 +1,9 @@
 package com.agent.gateway.proxy.service;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.smallrye.openapi.runtime.io.OpenApiParser;
 import io.quarkus.runtime.StartupEvent;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -16,6 +18,8 @@ import lombok.extern.slf4j.Slf4j;
 import java.net.URI;
 import java.net.URL;
 import java.net.JarURLConnection;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -44,6 +48,7 @@ public class SchemaLoader {
     private final Map<String, Map<String, Map<String, com.networknt.schema.JsonSchema>>> cachedJsonSchemas = new ConcurrentHashMap<>();
     
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper yamlObjectMapper = new ObjectMapper(new YAMLFactory());
     private final com.networknt.schema.JsonSchemaFactory schemaFactory = 
         com.networknt.schema.JsonSchemaFactory.getInstance(com.networknt.schema.SpecVersion.VersionFlag.V7);
     
@@ -196,16 +201,7 @@ public class SchemaLoader {
     
     private void loadSchema(String filename, URL schemaUrl) {
         try {
-            ParseOptions options = new ParseOptions();
-            options.setResolve(true);
-            options.setResolveFully(true);
-            
-            OpenAPIV3Parser parser = new OpenAPIV3Parser();
-            SwaggerParseResult result = parser.readLocation(
-                schemaUrl.toString(), 
-                null, 
-                options
-            );
+            SwaggerParseResult result = parseSchema(schemaUrl);
             
             if (result.getOpenAPI() != null) {
                 OpenAPI openAPI = result.getOpenAPI();
@@ -226,6 +222,70 @@ public class SchemaLoader {
         } catch (Exception e) {
             log.error("Error loading schema: {}", filename, e);
         }
+    }
+
+    SwaggerParseResult parseSchema(URL schemaUrl) throws Exception {
+        ParseOptions options = new ParseOptions();
+        options.setResolve(true);
+        options.setResolveFully(true);
+
+        OpenAPIV3Parser parser = new OpenAPIV3Parser();
+        String schemaContent;
+        try (InputStream inputStream = schemaUrl.openStream()) {
+            schemaContent = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        if (hasOnlyInternalReferences(schemaContent, schemaUrl.getPath())) {
+            return parser.readContents(schemaContent, null, options);
+        }
+        return parser.readLocation(schemaUrl.toString(), null, options);
+    }
+
+    boolean hasOnlyInternalReferences(String schemaContent, String locationHint) {
+        try {
+            JsonNode root = parseSchemaTree(schemaContent, locationHint);
+            return hasOnlyInternalReferences(root);
+        } catch (Exception e) {
+            log.debug("Falling back to location-based schema parsing for {}", locationHint, e);
+            return false;
+        }
+    }
+
+    private JsonNode parseSchemaTree(String schemaContent, String locationHint) throws Exception {
+        String normalizedLocation = locationHint == null ? "" : locationHint.toLowerCase(Locale.ROOT);
+        if (normalizedLocation.endsWith(".yaml") || normalizedLocation.endsWith(".yml")) {
+            return yamlObjectMapper.readTree(schemaContent);
+        }
+        return objectMapper.readTree(schemaContent);
+    }
+
+    private boolean hasOnlyInternalReferences(JsonNode node) {
+        if (node == null) {
+            return true;
+        }
+        if (node.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                if ("$ref".equals(field.getKey()) && field.getValue().isTextual()) {
+                    String ref = field.getValue().asText();
+                    if (!ref.startsWith("#")) {
+                        return false;
+                    }
+                }
+                if (!hasOnlyInternalReferences(field.getValue())) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                if (!hasOnlyInternalReferences(child)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
     
     /**
