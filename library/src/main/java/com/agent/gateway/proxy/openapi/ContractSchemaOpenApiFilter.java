@@ -19,8 +19,13 @@ public class ContractSchemaOpenApiFilter implements OASFilter {
     @Override
     public void filterOpenAPI(OpenAPI openAPI) {
         SchemaLoader schemaLoader = Arc.container().instance(SchemaLoader.class).get();
+        schemaLoader.ensureLoaded();
         if (openAPI == null || openAPI.getPaths() == null || openAPI.getPaths().getPathItems() == null) {
             return;
+        }
+
+        if (schemaLoader.getDocumentationSchemas().isEmpty()) {
+            log.debug("No documentation schemas loaded when applying OpenAPI contract filter");
         }
 
         for (Map.Entry<String, PathItem> pathEntry : openAPI.getPaths().getPathItems().entrySet()) {

@@ -46,6 +46,7 @@ public class SchemaLoader {
     private final Map<String, OpenAPI> schemas = new ConcurrentHashMap<>();
     private final Map<String, org.eclipse.microprofile.openapi.models.OpenAPI> documentationSchemas = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Map<String, com.networknt.schema.JsonSchema>>> cachedJsonSchemas = new ConcurrentHashMap<>();
+    private volatile boolean initialized;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ObjectMapper yamlObjectMapper = new ObjectMapper(new YAMLFactory());
@@ -53,10 +54,28 @@ public class SchemaLoader {
         com.networknt.schema.JsonSchemaFactory.getInstance(com.networknt.schema.SpecVersion.VersionFlag.V7);
     
     void onStart(@Observes StartupEvent event) {
-        loadSchemas();
+        ensureLoaded();
     }
     
     public void loadSchemas() {
+        ensureLoaded();
+    }
+
+    public void ensureLoaded() {
+        if (initialized) {
+            return;
+        }
+
+        synchronized (this) {
+            if (initialized) {
+                return;
+            }
+            loadSchemasInternal();
+            initialized = true;
+        }
+    }
+
+    private void loadSchemasInternal() {
         String schemaDirectory = proxyProperties.schemas().directory();
         log.info("Loading schemas from: {}", schemaDirectory);
 
@@ -87,6 +106,7 @@ public class SchemaLoader {
             
         } catch (Exception e) {
             log.error("Failed to load schemas from: {}", schemaDirectory, e);
+            throw new IllegalStateException("Failed to load schemas from " + schemaDirectory, e);
         }
     }
 
@@ -300,6 +320,7 @@ public class SchemaLoader {
     }
 
     public Map<String, org.eclipse.microprofile.openapi.models.OpenAPI> getDocumentationSchemas() {
+        ensureLoaded();
         return Collections.unmodifiableMap(documentationSchemas);
     }
     
@@ -611,9 +632,13 @@ public class SchemaLoader {
      * Reload all schemas (for development/testing)
      */
     public void reload() {
-        schemas.clear();
-        documentationSchemas.clear();
-        cachedJsonSchemas.clear();
-        loadSchemas();
+        synchronized (this) {
+            initialized = false;
+            schemas.clear();
+            documentationSchemas.clear();
+            cachedJsonSchemas.clear();
+            loadSchemasInternal();
+            initialized = true;
+        }
     }
 }
