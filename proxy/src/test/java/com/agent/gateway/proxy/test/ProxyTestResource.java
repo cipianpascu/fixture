@@ -298,15 +298,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[19].soap.version", "1.1");
         config.put("gateway.backends[19].soap.soap-action", "urn:GetCustomerProfile");
 
-        config.put("gateway.resources.order-summary.schema", "order-summary.yaml");
-        config.put("gateway.resources.order-summary.orders-backend", "orders-service");
-        config.put("gateway.resources.order-summary.orders-path-template", "/details/{id}");
-        config.put("gateway.resources.order-summary.payments-backend", "payments-service");
-        config.put("gateway.resources.order-summary.payments-path-template", "/orders/{id}");
-        config.put("gateway.resources.customer-profile.schema", "customer-profile.yaml");
-        config.put("gateway.resources.customer-profile.backend", "customer-profile-soap-service");
-        config.put("gateway.resources.customer-profile.soap-action", "urn:GetCustomerProfile");
-
         return config;
     }
 
@@ -700,13 +691,13 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
                 return;
             }
             if ("eidp-forbidden-session".equals(sessionId)) {
-                respond(exchange, 200, "{\"disallowedServiceShopTransactions\":[\"shop-a\"]}");
+                respond(exchange, 200, "{\"authorizationToken\":\"authorization-token\",\"glueAccessToken\":\"glue-access-token\",\"allowedServiceShopTransactions\":[]}");
                 return;
             }
             respond(
                 exchange,
                 200,
-                "{\"authorizationToken\":\"authorization-token\",\"eidpAccessToken\":\"eidp-access-token\",\"disallowedServiceShopTransactions\":[]}"
+                "{\"authorizationToken\":\"authorization-token\",\"glueAccessToken\":\"glue-access-token\",\"allowedServiceShopTransactions\":[\"shop-a\"]}"
             );
         });
 
@@ -734,7 +725,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             respond(
                 exchange,
                 200,
-                "{\"customerAccessToken\":\"ciam-customer-token\",\"disallowedServiceShopTransactions\":[]}"
+                "{\"customerAccessToken\":\"ciam-customer-token\",\"allowedServiceShopTransactions\":[\"shop-b\"]}"
             );
         });
 

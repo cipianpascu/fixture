@@ -1,28 +1,43 @@
 package com.agent.gateway.proxy.app.config;
 
-import io.smallrye.config.ConfigMapping;
-import io.smallrye.config.WithDefault;
-import io.smallrye.config.WithName;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
-@ConfigMapping(prefix = "gateway.resources.order-summary")
-public interface OrderSummaryResourceConfig {
+import java.util.Map;
 
-    @WithDefault("order-summary.yaml")
-    String schema();
+@ApplicationScoped
+public class OrderSummaryResourceConfig {
 
-    @WithName("orders-backend")
-    @WithDefault("orders-service")
-    String ordersBackend();
+    private static final String RESOURCE_NAME = "order-summary";
 
-    @WithName("orders-path-template")
-    @WithDefault("/details/{id}")
-    String ordersPathTemplate();
+    @Inject
+    GatewayResourceProperties gatewayResourceProperties;
 
-    @WithName("payments-backend")
-    @WithDefault("payments-service")
-    String paymentsBackend();
+    public String schema() {
+        return value("schema", "order-summary.yaml");
+    }
 
-    @WithName("payments-path-template")
-    @WithDefault("/orders/{id}")
-    String paymentsPathTemplate();
+    public String ordersBackend() {
+        return value("orders-backend", "orders-service");
+    }
+
+    public String ordersPathTemplate() {
+        return value("orders-path-template", "/details/{id}");
+    }
+
+    public String paymentsBackend() {
+        return value("payments-backend", "payments-service");
+    }
+
+    public String paymentsPathTemplate() {
+        return value("payments-path-template", "/orders/{id}");
+    }
+
+    private String value(String key, String defaultValue) {
+        return resourceValues().getOrDefault(key, defaultValue);
+    }
+
+    private Map<String, String> resourceValues() {
+        return gatewayResourceProperties.resources().getOrDefault(RESOURCE_NAME, Map.of());
+    }
 }

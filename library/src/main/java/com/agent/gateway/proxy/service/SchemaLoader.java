@@ -389,7 +389,7 @@ public class SchemaLoader {
         jsonSchema.put("$schema", "http://json-schema.org/draft-07/schema#");
         
         if (schema.getType() != null) {
-            jsonSchema.put("type", schema.getType());
+            jsonSchema.put("type", jsonSchemaType(schema));
         }
         
         if (schema.getProperties() != null && !schema.getProperties().isEmpty()) {
@@ -470,7 +470,7 @@ public class SchemaLoader {
             return shallowSchemaMap(schema);
         }
         
-        if (schema.getType() != null) map.put("type", schema.getType());
+        if (schema.getType() != null) map.put("type", jsonSchemaType(schema));
         if (schema.getProperties() != null) {
             Map<String, Object> properties = new HashMap<>();
             for (Map.Entry<String, io.swagger.v3.oas.models.media.Schema> entry : schema.getProperties().entrySet()) {
@@ -497,7 +497,7 @@ public class SchemaLoader {
             return map;
         }
         if (schema.getType() != null) {
-            map.put("type", schema.getType());
+            map.put("type", jsonSchemaType(schema));
         }
         if (schema.getEnum() != null) {
             map.put("enum", schema.getEnum());
@@ -535,6 +535,16 @@ public class SchemaLoader {
         }
         
         return null;
+    }
+
+    private Object jsonSchemaType(io.swagger.v3.oas.models.media.Schema<?> schema) {
+        if (schema == null || schema.getType() == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(schema.getNullable())) {
+            return List.of(schema.getType(), "null");
+        }
+        return schema.getType();
     }
     
     /**

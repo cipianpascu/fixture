@@ -22,6 +22,9 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import lombok.extern.slf4j.Slf4j;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +37,7 @@ import java.util.Optional;
 @Path("/api/v1/order-summaries")
 @ApplicationScoped
 @Slf4j
+@Tag(name = "Order Summaries")
 public class OrderSummaryResource extends BaseResource {
     private static final String HEADER_CORRELATION_ID = "x-correlation-id";
     private static final String HEADER_TENANT_ID = "x-tenant-id";
@@ -48,6 +52,11 @@ public class OrderSummaryResource extends BaseResource {
 
     @GET
     @Path("/{id}")
+    @Operation(
+        summary = "Get a combined order and payment summary",
+        description = "Returns an aggregated view composed from the orders and payments backends for a single order id."
+    )
+    @APIResponse(responseCode = "200", description = "Combined order and payment summary")
     public Response getOrderSummary(
         @PathParam("id") String id,
         @Context UriInfo uriInfo,
@@ -138,6 +147,13 @@ public class OrderSummaryResource extends BaseResource {
     @Path("/{id}/compose")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
+    @Operation(
+        summary = "Compose a chained order and payment summary",
+        description = "Demonstrates a multi-call orchestration flow where selected incoming headers and request-body "
+            + "attributes are forwarded to downstream calls, and fields from the first backend response are injected "
+            + "into the second backend request."
+    )
+    @APIResponse(responseCode = "200", description = "Combined order and payment summary")
     public Response composeOrderSummary(
         @PathParam("id") String id,
         @Context UriInfo uriInfo,

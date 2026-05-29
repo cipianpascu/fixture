@@ -16,9 +16,6 @@ quarkus:
         level: DEBUG
     console:
       format: "%d{yyyy-MM-dd HH:mm:ss} %-5p [%c{3.}] %s%e%n"
-  smallrye-openapi:
-    always-run-filter: true
-  
   # Health and Metrics
   smallrye-health:
     ui:
@@ -92,6 +89,10 @@ gateway:
       orders-path-template: /details/{id}
       payments-backend: payments-service
       payments-path-template: /orders/{id}
+    customer-profile:
+      schema: customer-profile.yaml
+      backend: customer-profile-soap-service
+      soap-action: urn:GetCustomerProfile
     
   # Backend configurations (file-based - NO database!)
   backends:

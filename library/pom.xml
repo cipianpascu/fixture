@@ -17,7 +17,7 @@
 
     <properties>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.version>3.6.4</quarkus.version>
+        <quarkus.version>3.35.2</quarkus.version>
         <compiler-plugin.version>3.11.0</compiler-plugin.version>
         <surefire-plugin.version>3.0.0</surefire-plugin.version>
         <junit-jupiter.version>5.10.2</junit-jupiter.version>
@@ -38,7 +38,7 @@
     <dependencies>
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-resteasy-reactive-jackson</artifactId>
+            <artifactId>quarkus-jackson</artifactId>
         </dependency>
 
         <dependency>
@@ -95,6 +95,11 @@
         </dependency>
 
         <dependency>
+            <groupId>jakarta.ws.rs</groupId>
+            <artifactId>jakarta.ws.rs-api</artifactId>
+        </dependency>
+
+        <dependency>
             <groupId>org.glassfish.jaxb</groupId>
             <artifactId>jaxb-runtime</artifactId>
         </dependency>
@@ -105,6 +110,14 @@
             <version>${junit-jupiter.version}</version>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.jboss.resteasy</groupId>
+            <artifactId>resteasy-core</artifactId>
+            <version>6.2.7.Final</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <build>

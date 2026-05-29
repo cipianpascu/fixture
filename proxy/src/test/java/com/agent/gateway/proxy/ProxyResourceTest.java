@@ -355,7 +355,7 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
             .body("status", equalTo("jwt-authz-eidp-ok"));
 
         assertEquals("authorization-token", ProxyTestResource.getLastEidpAuthorizationToken());
-        assertEquals("eidp-access-token", ProxyTestResource.getLastEidpAccessToken());
+        assertEquals("glue-access-token", ProxyTestResource.getLastEidpAccessToken());
     }
 
     @Test

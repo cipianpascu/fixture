@@ -95,19 +95,26 @@ public class JwtAuthService implements AuthService {
 
         if (authzTokens.isPresent()) {
             AuthzTokens tokens = authzTokens.get();
-            if (tokens.getDisallowedServiceShopTransactions() != null
-                && !tokens.getDisallowedServiceShopTransactions().isEmpty()) {
+            List<String> requestedTransactions = authzRequestConfig
+                .flatMap(ProxyProperties.AuthzRequestConfig::serviceShopTransactions)
+                .orElse(List.of());
+            List<String> deniedTransactions = requestedTransactions.stream()
+                .filter(requested -> tokens.getAllowedServiceShopTransactions() == null
+                    || !tokens.getAllowedServiceShopTransactions().contains(requested))
+                .toList();
+
+            if (!deniedTransactions.isEmpty()) {
                 log.warn(
-                    "Authz service denied requested serviceShopTransactions. Requested branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}, denied={}",
+                    "Authz service did not allow requested serviceShopTransactions. Requested branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}, allowed={}, denied={}",
                     resolveBranchCustomerNumber(request).orElse(null),
                     authzRequestConfig.flatMap(ProxyProperties.AuthzRequestConfig::gvoEntitlementsList).orElse(null),
                     authzRequestConfig.flatMap(ProxyProperties.AuthzRequestConfig::businessTransactions).orElse(null),
                     authzRequestConfig.flatMap(ProxyProperties.AuthzRequestConfig::serviceShopTransactions).orElse(null),
-                    tokens.getDisallowedServiceShopTransactions()
+                    tokens.getAllowedServiceShopTransactions(),
+                    deniedTransactions
                 );
                 throw new AuthorizationDeniedException(
-                    "Authz service disallowed requested serviceShopTransactions: "
-                        + tokens.getDisallowedServiceShopTransactions());
+                    "Authz service disallowed requested serviceShopTransactions: " + deniedTransactions);
             }
         }
 
@@ -232,10 +239,10 @@ public class JwtAuthService implements AuthService {
 
             if (tokens != null) {
                 if (tokens.getAuthorizationToken() == null
-                    && tokens.getEidpAccessToken() == null
+                    && tokens.getGlueAccessToken() == null
                     && tokens.getCustomerAccessToken() == null
-                    && (tokens.getDisallowedServiceShopTransactions() == null
-                        || tokens.getDisallowedServiceShopTransactions().isEmpty())) {
+                    && (tokens.getAllowedServiceShopTransactions() == null
+                        || tokens.getAllowedServiceShopTransactions().isEmpty())) {
                     log.warn(
                         "Authz service returned no token fields. Presence={}",
                         tokenPresence(null, tokens)
@@ -339,8 +346,8 @@ public class JwtAuthService implements AuthService {
                 Optional.ofNullable(authTokens != null ? authTokens.getCustomerAccessToken() : null);
             case "authorizationtoken", "authorization_token" ->
                 Optional.ofNullable(authzTokens != null ? authzTokens.getAuthorizationToken() : null);
-            case "eidpaccesstoken", "eidp_access_token" ->
-                Optional.ofNullable(authzTokens != null ? authzTokens.getEidpAccessToken() : null);
+            case "glueaccesstoken", "glue_access_token", "eidpaccesstoken", "eidp_access_token" ->
+                Optional.ofNullable(authzTokens != null ? authzTokens.getGlueAccessToken() : null);
             case "authzcustomeraccesstoken", "authz_customer_access_token" ->
                 Optional.ofNullable(authzTokens != null ? authzTokens.getCustomerAccessToken() : null);
             default -> Optional.empty();
@@ -395,6 +402,12 @@ public class JwtAuthService implements AuthService {
                 && !authTokens.getDisallowedPss().isEmpty()
         );
         presence.put(
+            "glue_access_token",
+            authzTokens != null
+                && authzTokens.getGlueAccessToken() != null
+                && !authzTokens.getGlueAccessToken().isBlank()
+        );
+        presence.put(
             "authorization_token",
             authzTokens != null
                 && authzTokens.getAuthorizationToken() != null
@@ -403,8 +416,8 @@ public class JwtAuthService implements AuthService {
         presence.put(
             "eidp_access_token",
             authzTokens != null
-                && authzTokens.getEidpAccessToken() != null
-                && !authzTokens.getEidpAccessToken().isBlank()
+                && authzTokens.getGlueAccessToken() != null
+                && !authzTokens.getGlueAccessToken().isBlank()
         );
         presence.put(
             "authz_customer_access_token",
@@ -413,10 +426,10 @@ public class JwtAuthService implements AuthService {
                 && !authzTokens.getCustomerAccessToken().isBlank()
         );
         presence.put(
-            "disallowed_service_shop_transactions",
+            "allowed_service_shop_transactions",
             authzTokens != null
-                && authzTokens.getDisallowedServiceShopTransactions() != null
-                && !authzTokens.getDisallowedServiceShopTransactions().isEmpty()
+                && authzTokens.getAllowedServiceShopTransactions() != null
+                && !authzTokens.getAllowedServiceShopTransactions().isEmpty()
         );
         return presence;
     }

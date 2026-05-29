@@ -474,7 +474,7 @@ public class SchemaValidationService {
         jsonSchema.put("$schema", "http://json-schema.org/draft-07/schema#");
 
         if (schema.getType() != null) {
-            jsonSchema.put("type", schema.getType());
+            jsonSchema.put("type", jsonSchemaType(schema));
         }
         if (schema.getFormat() != null) {
             jsonSchema.put("format", schema.getFormat());
@@ -530,6 +530,16 @@ public class SchemaValidationService {
         }
 
         return objectMapper.valueToTree(jsonSchema);
+    }
+
+    private Object jsonSchemaType(io.swagger.v3.oas.models.media.Schema<?> schema) {
+        if (schema == null || schema.getType() == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(schema.getNullable())) {
+            return List.of(schema.getType(), "null");
+        }
+        return schema.getType();
     }
     
     /**

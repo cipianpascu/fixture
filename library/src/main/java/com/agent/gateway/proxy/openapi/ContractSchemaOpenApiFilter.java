@@ -12,7 +12,7 @@ import org.eclipse.microprofile.openapi.models.Operation;
 import org.eclipse.microprofile.openapi.models.PathItem;
 import java.util.Map;
 
-@OpenApiFilter(OpenApiFilter.RunStage.RUN)
+@OpenApiFilter(stages = OpenApiFilter.RunStage.RUNTIME_STARTUP)
 @Slf4j
 public class ContractSchemaOpenApiFilter implements OASFilter {
 

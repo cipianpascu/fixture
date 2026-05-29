@@ -1,5 +1,6 @@
 package com.agent.gateway.proxy.auth;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -14,12 +15,14 @@ public class AuthzTokens {
     @JsonProperty("authorizationToken")
     private String authorizationToken;
 
-    @JsonProperty("eidpAccessToken")
-    private String eidpAccessToken;
+    @JsonProperty("glueAccessToken")
+    @JsonAlias("eidpAccessToken")
+    private String glueAccessToken;
 
     @JsonProperty("customerAccessToken")
     private String customerAccessToken;
 
-    @JsonProperty("disallowedServiceShopTransactions")
-    private List<String> disallowedServiceShopTransactions;
+    @JsonProperty("allowedServiceShopTransactions")
+    @JsonAlias("disallowedServiceShopTransactions")
+    private List<String> allowedServiceShopTransactions;
 }
