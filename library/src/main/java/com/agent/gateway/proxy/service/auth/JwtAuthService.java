@@ -436,9 +436,9 @@ public class JwtAuthService implements AuthService {
 
     private Optional<String> resolveBranchCustomerNumber(ProxyRequestContext request) {
         return authzRequestConfig.flatMap(config ->
-            config.branchCustomerNumberSource()
+            config.branchCustomerNumber()
+                .filter(value -> !value.isBlank())
                 .map(mapping -> resolveScalarMapping(mapping, request))
-                .or(() -> config.branchCustomerNumber().filter(value -> !value.isBlank()))
         );
     }
 

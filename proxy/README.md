@@ -168,8 +168,7 @@ JWT auth requests still use `gateway.auth.service-url` as the base URL. `auth-re
 For `securityType: jwt`, `authz-request` fields are also optional and can be used independently or together with `auth-request`:
 
 - `path`: authz service path; supports `{sessionId}` placeholder
-- `branch-customer-number`: fixed literal branch/customer number
-- `branch-customer-number-source`: dynamic source using `header:<Header-Name>`, `cookie:<Cookie-Name>`, or `literal:<value>`
+- `branch-customer-number`: branch/customer number mapping using a plain literal, `literal:<value>`, `header:<Header-Name>`, or `cookie:<Cookie-Name>`
 - `gvo-entitlements-list`: EIDP authz list
 - `business-transactions`: CIAM authz list
 - `service-shop-transactions`: authz list used by both flows
@@ -188,7 +187,7 @@ gateway:
       securityType: jwt
       authz-request:
         path: /auth/authz/eidp/{sessionId}
-        branch-customer-number-source: header:Branch-Customer-Number
+        branch-customer-number: header:Branch-Customer-Number
         gvo-entitlements-list:
           - entitlement-a
         service-shop-transactions:
@@ -210,7 +209,7 @@ gateway:
       securityType: jwt
       authz-request:
         path: /auth/authz/ciam/{sessionId}
-        branch-customer-number-source: header:Branch-Customer-Number
+        branch-customer-number: header:Branch-Customer-Number
         business-transactions:
           - business-a
         service-shop-transactions:
@@ -567,4 +566,3 @@ curl http://localhost:8080/q/health
 ```
 http://localhost:8080/q/dev
 ```
-

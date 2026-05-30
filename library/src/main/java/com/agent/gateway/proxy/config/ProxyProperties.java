@@ -95,9 +95,6 @@ public interface ProxyProperties {
         @WithName("branch-customer-number")
         Optional<String> branchCustomerNumber();
 
-        @WithName("branch-customer-number-source")
-        Optional<String> branchCustomerNumberSource();
-
         @WithName("gvo-entitlements-list")
         Optional<List<String>> gvoEntitlementsList();
 

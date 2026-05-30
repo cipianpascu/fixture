@@ -135,7 +135,7 @@ gateway:
       # Optional JWT authz flow:
       # authz-request:
       #   path: /auth/authz/eidp/{sessionId}
-      #   branch-customer-number-source: header:Branch-Customer-Number
+      #   branch-customer-number: header:Branch-Customer-Number
       #   gvo-entitlements-list:
       #     - entitlement-a
       #   service-shop-transactions:

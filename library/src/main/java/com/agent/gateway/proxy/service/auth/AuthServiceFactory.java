@@ -60,15 +60,13 @@ public class AuthServiceFactory {
                     .formatted(backend.name()));
         }
         log.debug(
-            "Creating JWT auth service for backend: {} with auth-request: sparteGvo={}, btx={}, pss={} and authz-request: path={}, branchCustomerNumber={}, branchCustomerNumberSource={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
+            "Creating JWT auth service for backend: {} with auth-request: sparteGvo={}, btx={}, pss={} and authz-request: path={}, branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
             backend.name(),
             backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::sparteGvo).orElse(null),
             backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::btx).orElse(null),
             backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::pss).orElse(null),
             backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::path).orElse(null),
             backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::branchCustomerNumber).orElse(null),
-            backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::branchCustomerNumberSource)
-                .orElse(null),
             backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::gvoEntitlementsList).orElse(null),
             backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::businessTransactions).orElse(null),
             backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::serviceShopTransactions).orElse(null)

@@ -190,7 +190,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[8].enabled", "true");
         config.put("gateway.backends[8].securityType", "jwt");
         config.put("gateway.backends[8].authz-request.path", "/auth/authz/eidp/{sessionId}");
-        config.put("gateway.backends[8].authz-request.branch-customer-number-source", "header:Branch-Customer-Number");
+        config.put("gateway.backends[8].authz-request.branch-customer-number", "header:Branch-Customer-Number");
         config.put("gateway.backends[8].authz-request.gvo-entitlements-list[0]", "entitlement-a");
         config.put("gateway.backends[8].authz-request.service-shop-transactions[0]", "shop-a");
         config.put("gateway.backends[8].securityConfig.token-headers.X-Authorization-Token", "authorization_token");
@@ -203,7 +203,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[9].enabled", "true");
         config.put("gateway.backends[9].securityType", "jwt");
         config.put("gateway.backends[9].authz-request.path", "/auth/authz/ciam/{sessionId}");
-        config.put("gateway.backends[9].authz-request.branch-customer-number-source", "header:Branch-Customer-Number");
+        config.put("gateway.backends[9].authz-request.branch-customer-number", "header:Branch-Customer-Number");
         config.put("gateway.backends[9].authz-request.business-transactions[0]", "business-a");
         config.put("gateway.backends[9].authz-request.service-shop-transactions[0]", "shop-b");
         config.put("gateway.backends[9].securityConfig.bearer-source", "authz_customer_access_token");
