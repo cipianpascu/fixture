@@ -20,7 +20,7 @@ public class AuthServiceFactory {
     ProxyProperties proxyProperties;
 
     @Inject
-    AuthServiceCaller authServiceCaller;
+    AuthServiceCallerFactory authServiceCallerFactory;
 
     @Inject
     CloudRunIdTokenProvider cloudRunIdTokenProvider;
@@ -40,7 +40,6 @@ public class AuthServiceFactory {
             case "jwt" -> createJwtAuthService(backend);
             case "basic", "basic_auth" -> createBasicAuthService(backend);
             case "form" -> createFormAuthService(backend);
-            case "transactionid", "transaction_id" -> createTransactionIdAuthService(backend);
             case "cloudrun", "cloud_run" -> createCloudRunAuthService(backend);
             case "none" -> new NoOpAuthService();
             default -> {
@@ -60,11 +59,13 @@ public class AuthServiceFactory {
                     .formatted(backend.name()));
         }
         log.debug(
-            "Creating JWT auth service for backend: {} with auth-request: sparteGvo={}, btx={}, pss={} and authz-request: path={}, branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
+            "Creating JWT auth service for backend: {} with auth-request: service={}, sparteGvo={}, btx={}, pss={} and authz-request: service={}, path={}, branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
             backend.name(),
+            backend.authRequest().map(ProxyProperties.AuthRequestConfig::service).orElse(null),
             backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::sparteGvo).orElse(null),
             backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::btx).orElse(null),
             backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::pss).orElse(null),
+            backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::service).orElse(null),
             backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::path).orElse(null),
             backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::branchCustomerNumber).orElse(null),
             backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::gvoEntitlementsList).orElse(null),
@@ -72,8 +73,14 @@ public class AuthServiceFactory {
             backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::serviceShopTransactions).orElse(null)
         );
         return new JwtAuthService(
-            proxyProperties, 
-            authServiceCaller,
+            backend.authRequest().map(ProxyProperties.AuthRequestConfig::service)
+                .map(authServiceCallerFactory::get),
+            backend.authRequest().map(ProxyProperties.AuthRequestConfig::service)
+                .map(authServiceCallerFactory::getConfig),
+            backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::service)
+                .map(authServiceCallerFactory::get),
+            backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::service)
+                .map(authServiceCallerFactory::getConfig),
             backend.authRequest(),
             backend.authzRequest(),
             backend.securityConfig()
@@ -107,20 +114,11 @@ public class AuthServiceFactory {
         );
     }
 
-    private AuthService createTransactionIdAuthService(ProxyProperties.BackendDefinition backend) {
-        log.debug("Creating transaction-id auth service for backend: {}", backend.name());
-        return new TransactionIdAuthService(
-            proxyProperties,
-            authServiceCaller,
-            backend.securityConfig()
-        );
-    }
-
     private AuthService createFormAuthService(ProxyProperties.BackendDefinition backend) {
         log.debug("Creating form auth service for backend: {}", backend.name());
         return new FormAuthService(
             proxyProperties,
-            authServiceCaller,
+            authServiceCallerFactory.get("auth"),
             backend.securityConfig()
         );
     }

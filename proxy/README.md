@@ -38,10 +38,9 @@ Per backend, `securityType` can be:
 - `basic`: injects HTTP Basic credentials from `securityConfig.username/password`
 - `jwt`: calls the configured auth service and maps returned tokens to backend-specific headers
 - `form`: supports either a form-encoded auth-service pre-call or inline form parameter enrichment on the actual backend request
-- `transactionid`: builds an auth-service JSON body from incoming headers and maps returned fields to backend headers
 - `cloudrun`: generates a Google ID token and sends it as `X-Serverless-Authorization`
 
-Auth-service calls are configured separately under `gateway.auth`. The auth service itself can also use Cloud Run IAM auth with:
+Auth-capable service calls are configured separately under named `gateway.<service>` blocks. Typical profiles are `gateway.auth` and `gateway.authz`. A service profile can also use Cloud Run IAM auth with:
 
 - `gateway.auth.security-type=cloudrun`
 - `gateway.auth.security-config.audience=...`
@@ -58,6 +57,7 @@ Use `gateway.tls.profiles` to define reusable outbound TLS settings:
 Then reference a profile from:
 
 - `gateway.auth.tls-profile`
+- `gateway.authz.tls-profile`
 - `gateway.backends[n].tls-profile`
 
 Typical usage:
@@ -78,6 +78,10 @@ gateway:
     enabled: true
     service-url: http://localhost:8081
 
+  authz:
+    enabled: true
+    service-url: http://localhost:8082
+
   schemas:
     directory: classpath:schemas/
     validate-requests: true
@@ -92,6 +96,7 @@ gateway:
       enabled: true
       securityType: jwt
       auth-request:
+        service: auth
         sparte-gvo:
           - a
           - b
@@ -110,9 +115,9 @@ gateway:
 - `timeout`: request timeout for upstream call
 - `enabled`: whether the backend is routable
 - `http-version`: `http1_1` by default, optionally `http2` for known-good upstreams
-- `securityType`: `none`, `basic`, `jwt`, `form`, `transactionid`, or `cloudrun`
+- `securityType`: `none`, `basic`, `jwt`, `form`, or `cloudrun`
 - `securityConfig`: auth-specific key/value config
-- `auth-request`: structured request payload sent to the auth service for `jwt`
+- `auth-request`: structured request payload sent to the selected auth service for `jwt`
 - `tls-profile`: optional outbound TLS profile name
 - `proxy`: optional outbound HTTP proxy for this backend only
 
@@ -131,7 +136,7 @@ proxy:
 Notes:
 
 - backend proxy settings affect only calls from the proxy to that backend
-- they do not affect calls to `gateway.auth.service-url`, which use the auth-service transport configuration instead
+- they do not affect calls to `gateway.<service>.service-url`, which use the selected service profile transport configuration instead
 - `non-proxy-hosts` supports exact hosts and `*.` suffix patterns
 - keep `http-version: http1_1` for plain `http://` upstreams
 - use `http-version: http2` only for upstreams that are known to support it correctly, typically over `https://`
@@ -156,6 +161,7 @@ Additional JWT token sources from authz are:
 
 For `securityType: jwt`, `auth-request` fields are independently optional:
 
+- `service`: named `gateway.<service>` profile to use for the auth call
 - `path`: auth service path override; supports `{sessionId}` placeholder and defaults to `/auth/tokens/{sessionId}`
 - `sparte-gvo`
 - `btx`
@@ -163,10 +169,11 @@ For `securityType: jwt`, `auth-request` fields are independently optional:
 
 Only configure the lists required by the target auth flow. Omitted fields are not sent to the auth service.
 
-JWT auth requests still use `gateway.auth.service-url` as the base URL. `auth-request.path` only overrides the relative path used for that backend’s auth call.
+JWT auth requests use the `gateway.<service>.service-url` configured by `auth-request.service`. `auth-request.path` only overrides the relative path used for that backend’s auth call.
 
 For `securityType: jwt`, `authz-request` fields are also optional and can be used independently or together with `auth-request`:
 
+- `service`: named `gateway.<service>` profile to use for the authz call
 - `path`: authz service path; supports `{sessionId}` placeholder
 - `branch-customer-number`: branch/customer number mapping using a plain literal, `literal:<value>`, `header:<Header-Name>`, or `cookie:<Cookie-Name>`
 - `gvo-entitlements-list`: EIDP authz list
@@ -179,6 +186,11 @@ Example EIDP authz flow:
 
 ```yaml
 gateway:
+  authz:
+    service-url: https://partner-authz.example.com
+    security-type: cloudrun
+    security-config:
+      audience: https://partner-authz.example.com
   backends:
     - name: jwt-authz-eidp-service
       baseUrl: https://partner.example.com
@@ -186,6 +198,7 @@ gateway:
       schema: partner.yaml
       securityType: jwt
       authz-request:
+        service: authz
         path: /auth/authz/eidp/{sessionId}
         branch-customer-number: header:Branch-Customer-Number
         gvo-entitlements-list:
@@ -201,6 +214,11 @@ Example CIAM authz flow:
 
 ```yaml
 gateway:
+  authz:
+    service-url: https://partner-authz.example.com
+    security-type: cloudrun
+    security-config:
+      audience: https://partner-authz.example.com
   backends:
     - name: jwt-authz-ciam-service
       baseUrl: https://partner.example.com
@@ -208,6 +226,7 @@ gateway:
       schema: partner.yaml
       securityType: jwt
       authz-request:
+        service: authz
         path: /auth/authz/ciam/{sessionId}
         branch-customer-number: header:Branch-Customer-Number
         business-transactions:
@@ -218,21 +237,9 @@ gateway:
         bearer-source: authz_customer_access_token
 ```
 
-For `securityType: transactionid`, `securityConfig` supports:
-
-- `auth-path`: auth-service path to call, defaults to `/auth/transactions`
-- `request-body.<field>`: maps an auth request body field from an incoming source
-- `response-headers.<Header-Name>`: maps an auth response field into an outbound backend header
-
-Supported `request-body.*` mapping sources:
-
-- `header:<Header-Name>`: read from an incoming request header
-- `cookie:<Cookie-Name>`: read from an incoming request cookie
-- `literal:<value>`: use a fixed literal value
-
 For `securityType: form`, `securityConfig` supports:
 
-- `mode`: `auth-service` (default) or `inline`
+- `service`: optional; defaults to `inline`. `inline` performs inline form enrichment, while any other value uses the configured `gateway.auth` service
 - `auth-path`: auth-service path to call, defaults to `/auth/form`
 - `form-params.<field>`: maps a form parameter from an incoming source
 - `response-headers.<Header-Name>`: maps an auth response field into an outbound backend header
@@ -387,28 +394,6 @@ gateway:
         static-headers.x-api-key: ${APIGEE_API_KEY}
 ```
 
-### Header-driven transaction-id backend
-
-```yaml
-gateway:
-  auth:
-    service-url: https://oauth-service-abcde-ew.a.run.app
-    security-type: cloudrun
-    security-config:
-      audience: https://oauth-service-abcde-ew.a.run.app/
-
-  backends:
-    - name: face-service
-      baseUrl: https://face.example.com
-      path: /api
-      schema: face-service.yaml
-      securityType: transactionid
-      securityConfig:
-        auth-path: /auth/transactions
-        request-body.processId: header:Process-Id
-        response-headers.x-request-id: transactionId
-```
-
 ### Form Auth Example
 
 ```yaml
@@ -420,7 +405,7 @@ gateway:
       schema: legacy-service.yaml
       securityType: form
       securityConfig:
-        mode: auth-service
+        service: auth
         auth-path: /auth/form
         form-params.grant_type: literal:client_credentials
         form-params.client_id: header:Client-Id
@@ -444,24 +429,18 @@ gateway:
       schema: legacy-form.yaml
       securityType: form
       securityConfig:
-        mode: inline
+        service: inline
         form-params.grant_type: literal:client_credentials
         form-params.client_id: header:Client-Id
         form-params.client_secret: cookie:clientSecret
 ```
 
 Notes:
-- `inline` mode does not call the auth service
+- `service: inline` does not call the auth service
+- omitting `service` is equivalent to `service: inline`
 - it merges configured `form-params.*` into the outbound backend request body
 - use it only with `application/x-www-form-urlencoded` backend requests
 - the incoming proxy request must also use `Content-Type: application/x-www-form-urlencoded`
-
-Behavior:
-
-- incoming request header `Process-Id: p123`
-- auth request body `{ "processId": "p123" }`
-- auth response body `{ "transactionId": "tx-123" }`
-- backend request header `x-request-id: tx-123`
 
 ### Private Cloud Run backend
 

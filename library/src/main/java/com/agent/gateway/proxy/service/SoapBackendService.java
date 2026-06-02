@@ -141,7 +141,7 @@ public class SoapBackendService {
                 "Backend '%s' is not configured for SOAP invocation".formatted(backend.name()));
         }
         if (AUTH_TYPE_FORM.equalsIgnoreCase(backend.securityType().orElse(""))
-            && FORM_MODE_INLINE.equalsIgnoreCase(backend.securityConfig().getOrDefault("mode", ""))) {
+            && FORM_MODE_INLINE.equalsIgnoreCase(backend.securityConfig().getOrDefault("service", ""))) {
             throw new ProxyConfigurationException(
                 "SOAP backend '%s' does not support form auth inline mode".formatted(backend.name()));
         }

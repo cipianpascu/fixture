@@ -63,7 +63,6 @@ flowchart TD
         - basic
         - jwt auth and authz
         - form
-        - transactionid
         - cloudrun]
 
         K[AuthServiceCaller
@@ -134,7 +133,6 @@ The library provides shared auth strategy wiring through `AuthServiceFactory`. S
 - `basic`
 - `jwt`
 - `form`
-- `transactionid`
 - `cloudrun`
 
 Notable behavior:
@@ -144,7 +142,6 @@ Notable behavior:
 - `jwt` supports auth-request path overrides and authz-request path configuration, including absolute URLs
 - `form` supports both `auth-service` and `inline` modes
 - `form` inline mode expects `application/x-www-form-urlencoded` on the forwarded request
-- `transactionid` supports mapped auth request bodies built from request headers/cookies/literals
 - `cloudrun` adds service-to-service identity for Cloud Run protected upstreams
 
 Auth failures are categorized so applications get clearer responses:

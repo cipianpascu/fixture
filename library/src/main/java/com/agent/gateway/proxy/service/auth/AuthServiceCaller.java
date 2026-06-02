@@ -1,6 +1,5 @@
 package com.agent.gateway.proxy.service.auth;
 
-import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.exception.AuthServiceException;
 import com.agent.gateway.proxy.exception.AuthenticationDeniedException;
 import com.agent.gateway.proxy.exception.AuthorizationDeniedException;
@@ -8,8 +7,6 @@ import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import com.agent.gateway.proxy.service.TlsContextFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 
 import java.io.IOException;
 import java.net.URI;
@@ -21,28 +18,26 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@ApplicationScoped
 public class AuthServiceCaller {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private final ProxyProperties proxyProperties;
+    private final ResolvedAuthServiceConfig serviceConfig;
     private final CloudRunIdTokenProvider cloudRunIdTokenProvider;
     private final HttpClient httpClient;
     private final String cloudRunAudience;
 
-    @Inject
     public AuthServiceCaller(
-        ProxyProperties proxyProperties,
+        ResolvedAuthServiceConfig serviceConfig,
         TlsContextFactory tlsContextFactory,
         CloudRunIdTokenProvider cloudRunIdTokenProvider) {
-        this.proxyProperties = proxyProperties;
+        this.serviceConfig = serviceConfig;
         this.cloudRunIdTokenProvider = cloudRunIdTokenProvider;
 
         HttpClient.Builder builder = HttpClient.newBuilder()
-            .connectTimeout(proxyProperties.auth().timeout())
+            .connectTimeout(serviceConfig.timeout())
             .version(HttpClient.Version.HTTP_1_1);
-        tlsContextFactory.createAuthSslContext().ifPresent(builder::sslContext);
+        tlsContextFactory.createServiceSslContext(serviceConfig.tlsProfile()).ifPresent(builder::sslContext);
         this.httpClient = builder.build();
         this.cloudRunAudience = resolveCloudRunAudience();
     }
@@ -50,16 +45,11 @@ public class AuthServiceCaller {
     public <T> T postJson(String pathOrUrl, Object requestBody, Class<T> responseType) {
         try {
             String requestJson = OBJECT_MAPPER.writeValueAsString(requestBody);
-            return send(
-                pathOrUrl,
-                requestJson,
-                "application/json",
-                responseType
-            );
+            return send(pathOrUrl, requestJson, "application/json", responseType);
         } catch (AuthServiceException e) {
             throw e;
         } catch (IOException e) {
-            throw new AuthServiceException("Failed to call auth service", e);
+            throw new AuthServiceException("Failed to call auth service '%s'".formatted(serviceConfig.name()), e);
         }
     }
 
@@ -67,19 +57,14 @@ public class AuthServiceCaller {
         String formBody = parameters.entrySet().stream()
             .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
             .collect(Collectors.joining("&"));
-        return send(
-            pathOrUrl,
-            formBody,
-            "application/x-www-form-urlencoded",
-            responseType
-        );
+        return send(pathOrUrl, formBody, "application/x-www-form-urlencoded", responseType);
     }
 
     private <T> T send(String pathOrUrl, String body, String contentType, Class<T> responseType) {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(resolveUrl(pathOrUrl)))
-                .timeout(proxyProperties.auth().timeout())
+                .timeout(serviceConfig.timeout())
                 .header("Accept", "application/json")
                 .header("Content-Type", contentType)
                 .POST(HttpRequest.BodyPublishers.ofString(body));
@@ -117,23 +102,25 @@ public class AuthServiceCaller {
         } catch (AuthServiceException e) {
             throw e;
         } catch (IOException e) {
-            throw new AuthServiceException("Failed to call auth service", e);
+            throw new AuthServiceException("Failed to call auth service '%s'".formatted(serviceConfig.name()), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new AuthServiceException("Auth service request was interrupted", e);
+            throw new AuthServiceException(
+                "Auth service '%s' request was interrupted".formatted(serviceConfig.name()), e);
         }
     }
 
     private String resolveUrl(String pathOrUrl) {
         if (pathOrUrl == null || pathOrUrl.isBlank()) {
-            throw new AuthServiceException("Auth service path must not be blank");
+            throw new AuthServiceException(
+                "Auth service '%s' path must not be blank".formatted(serviceConfig.name()));
         }
 
         if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
             return pathOrUrl;
         }
 
-        String serviceUrl = proxyProperties.auth().serviceUrl();
+        String serviceUrl = serviceConfig.serviceUrl();
         boolean serviceEndsWithSlash = serviceUrl.endsWith("/");
         boolean pathStartsWithSlash = pathOrUrl.startsWith("/");
         if (serviceEndsWithSlash && pathStartsWithSlash) {
@@ -146,27 +133,29 @@ public class AuthServiceCaller {
     }
 
     private String resolveCloudRunAudience() {
-        String authSecurityType = proxyProperties.auth().securityType().orElse("none");
+        String authSecurityType = serviceConfig.securityType().orElse("none");
         if ("cloudrun".equalsIgnoreCase(authSecurityType) || "cloud_run".equalsIgnoreCase(authSecurityType)) {
             return CloudRunAudienceResolver.resolveAudience(
-                proxyProperties.auth().serviceUrl(),
-                proxyProperties.auth().securityConfig(),
-                "auth service"
+                serviceConfig.serviceUrl(),
+                serviceConfig.securityConfig(),
+                "auth service '%s'".formatted(serviceConfig.name())
             );
         }
         if (authSecurityType.isBlank() || "none".equalsIgnoreCase(authSecurityType)) {
             return null;
         }
         throw new ProxyConfigurationException(
-            "Unsupported auth.security-type '%s'".formatted(authSecurityType));
+            "Unsupported security-type '%s' for auth service '%s'".formatted(
+                authSecurityType, serviceConfig.name()));
     }
 
     private String describeFailure(HttpResponse<String> response) {
         String responseBody = response.body();
         if (responseBody == null || responseBody.isBlank()) {
-            return "Auth service returned HTTP %d".formatted(response.statusCode());
+            return "Auth service '%s' returned HTTP %d".formatted(serviceConfig.name(), response.statusCode());
         }
-        return "Auth service returned HTTP %d: %s".formatted(response.statusCode(), responseBody);
+        return "Auth service '%s' returned HTTP %d: %s".formatted(
+            serviceConfig.name(), response.statusCode(), responseBody);
     }
 
     private String encode(String value) {

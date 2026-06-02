@@ -54,6 +54,17 @@ gateway:
     #   audience: https://oauth-service-abcde-ew.a.run.app/
     # tls-profile: internal-ca                    # Optional named TLS profile for HTTPS auth services
 
+  authz:
+    enabled: true
+    service-url: http://localhost:8081             # Authz service base URL
+    session-id-header: X-Session-Id
+    session-id-cookie: sessionId
+    timeout: 5s
+    # security-type: cloudrun
+    # security-config:
+    #   audience: https://oauthz-service-abcde-ew.a.run.app/
+    # tls-profile: internal-ca
+
   # Optional outbound TLS profiles for auth service and backend calls
   tls:
     profiles: {}
@@ -114,6 +125,7 @@ gateway:
       #     - "*.svc.cluster.local"
       # tls-profile: internal-ca
       auth-request:
+        service: auth
         sparte-gvo:
           - a
           - b
@@ -128,12 +140,14 @@ gateway:
       #
       # Optional auth path override:
       # auth-request:
+      #   service: auth
       #   path: /custom-auth/tokens/{sessionId}
       #   btx:
       #     - FirstFunction
       #
       # Optional JWT authz flow:
       # authz-request:
+      #   service: authz
       #   path: /auth/authz/eidp/{sessionId}
       #   branch-customer-number: header:Branch-Customer-Number
       #   gvo-entitlements-list:
@@ -153,6 +167,7 @@ gateway:
     #   enabled: true
     #   securityType: jwt
     #   auth-request:
+    #     service: auth                         # Any non-inline value uses the configured gateway.auth caller
     #     sparte-gvo:
     #       - a
     #       - b
@@ -173,7 +188,7 @@ gateway:
     #   enabled: true
     #   securityType: form
     #   securityConfig:
-    #     mode: auth-service
+    #     service: auth
     #     auth-path: /auth/form
     #     form-params.grant_type: literal:client_credentials
     #     form-params.client_id: header:Client-Id
@@ -192,7 +207,7 @@ gateway:
     #   enabled: true
     #   securityType: form
     #   securityConfig:
-    #     mode: inline
+    #     service: inline                      # Default when omitted
     #     form-params.grant_type: literal:client_credentials
     #     form-params.client_id: header:Client-Id
     #     form-params.client_secret: cookie:clientSecret

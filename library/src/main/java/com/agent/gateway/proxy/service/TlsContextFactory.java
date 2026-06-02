@@ -30,6 +30,10 @@ public class TlsContextFactory {
         return createSslContext(proxyProperties.auth().tlsProfile());
     }
 
+    public Optional<SSLContext> createServiceSslContext(Optional<String> profileName) {
+        return createSslContext(profileName);
+    }
+
     public Optional<SSLContext> createBackendSslContext(ProxyProperties.BackendDefinition backend) {
         return createSslContext(backend.tlsProfile());
     }

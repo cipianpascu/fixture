@@ -1,6 +1,5 @@
 package com.agent.gateway.proxy.config;
 
-import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import io.smallrye.config.WithName;
 
@@ -13,7 +12,6 @@ import java.util.Optional;
  * Configuration properties for the proxy module (Quarkus)
  * Loaded from application.yml - NO database
  */
-@ConfigMapping(prefix = "gateway")
 public interface ProxyProperties {
     
     @WithName("schemas")
@@ -79,6 +77,8 @@ public interface ProxyProperties {
     }
 
     interface AuthRequestConfig {
+        String service();
+
         Optional<String> path();
 
         @WithName("sparte-gvo")
@@ -90,6 +90,8 @@ public interface ProxyProperties {
     }
 
     interface AuthzRequestConfig {
+        String service();
+
         String path();
 
         @WithName("branch-customer-number")

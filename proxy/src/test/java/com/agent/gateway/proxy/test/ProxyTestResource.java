@@ -31,7 +31,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
     private static final AtomicReference<String> LAST_EIDP_AUTHORIZATION_TOKEN = new AtomicReference<>();
     private static final AtomicReference<String> LAST_EIDP_ACCESS_TOKEN = new AtomicReference<>();
     private static final AtomicReference<String> LAST_CIAM_CUSTOMER_ACCESS_TOKEN = new AtomicReference<>();
-    private static final AtomicReference<String> LAST_TRANSACTION_REQUEST_ID = new AtomicReference<>();
     private static final AtomicReference<String> LAST_FORM_AUTHORIZATION = new AtomicReference<>();
     private static final AtomicReference<String> LAST_FORM_TENANT_TOKEN = new AtomicReference<>();
     private static final AtomicReference<String> LAST_INLINE_FORM_BODY = new AtomicReference<>();
@@ -70,7 +69,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         LAST_EIDP_AUTHORIZATION_TOKEN.set(null);
         LAST_EIDP_ACCESS_TOKEN.set(null);
         LAST_CIAM_CUSTOMER_ACCESS_TOKEN.set(null);
-        LAST_TRANSACTION_REQUEST_ID.set(null);
         LAST_FORM_AUTHORIZATION.set(null);
         LAST_FORM_TENANT_TOKEN.set(null);
         LAST_INLINE_FORM_BODY.set(null);
@@ -109,6 +107,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.auth.service-url", authBaseUrl);
         config.put("gateway.auth.security-type", "cloudrun");
         config.put("gateway.auth.security-config.audience", "https://oauth-service-ew.a.run.app/");
+        config.put("gateway.authz.enabled", "true");
+        config.put("gateway.authz.service-url", authBaseUrl);
+        config.put("gateway.authz.security-type", "cloudrun");
+        config.put("gateway.authz.security-config.audience", "https://oauthz-service-ew.a.run.app/");
 
         config.put("gateway.backends[0].name", "secondary-service");
         config.put("gateway.backends[0].baseUrl", backendBaseUrl);
@@ -144,6 +146,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[4].schema", "secondary-service.yaml");
         config.put("gateway.backends[4].enabled", "true");
         config.put("gateway.backends[4].securityType", "jwt");
+        config.put("gateway.backends[4].auth-request.service", "auth");
         config.put("gateway.backends[4].auth-request.sparte-gvo[0]", "a");
         config.put("gateway.backends[4].auth-request.sparte-gvo[1]", "b");
         config.put("gateway.backends[4].auth-request.btx[0]", "FirstFunction");
@@ -155,6 +158,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[5].schema", "secondary-service.yaml");
         config.put("gateway.backends[5].enabled", "true");
         config.put("gateway.backends[5].securityType", "jwt");
+        config.put("gateway.backends[5].auth-request.service", "auth");
         config.put("gateway.backends[5].auth-request.sparte-gvo[0]", "a");
         config.put("gateway.backends[5].auth-request.sparte-gvo[1]", "b");
         config.put("gateway.backends[5].auth-request.btx[0]", "FirstFunction");
@@ -168,6 +172,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[6].schema", "secondary-service.yaml");
         config.put("gateway.backends[6].enabled", "true");
         config.put("gateway.backends[6].securityType", "jwt");
+        config.put("gateway.backends[6].auth-request.service", "auth");
         config.put("gateway.backends[6].auth-request.sparte-gvo[0]", "a");
         config.put("gateway.backends[6].auth-request.sparte-gvo[1]", "b");
         config.put("gateway.backends[6].auth-request.btx[0]", "FirstFunction");
@@ -181,6 +186,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[7].schema", "secondary-service.yaml");
         config.put("gateway.backends[7].enabled", "true");
         config.put("gateway.backends[7].securityType", "jwt");
+        config.put("gateway.backends[7].auth-request.service", "auth");
         config.put("gateway.backends[7].auth-request.btx[0]", "FirstFunction");
 
         config.put("gateway.backends[8].name", "jwt-authz-eidp-service");
@@ -189,6 +195,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[8].schema", "secondary-service.yaml");
         config.put("gateway.backends[8].enabled", "true");
         config.put("gateway.backends[8].securityType", "jwt");
+        config.put("gateway.backends[8].authz-request.service", "authz");
         config.put("gateway.backends[8].authz-request.path", "/auth/authz/eidp/{sessionId}");
         config.put("gateway.backends[8].authz-request.branch-customer-number", "header:Branch-Customer-Number");
         config.put("gateway.backends[8].authz-request.gvo-entitlements-list[0]", "entitlement-a");
@@ -202,6 +209,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[9].schema", "secondary-service.yaml");
         config.put("gateway.backends[9].enabled", "true");
         config.put("gateway.backends[9].securityType", "jwt");
+        config.put("gateway.backends[9].authz-request.service", "authz");
         config.put("gateway.backends[9].authz-request.path", "/auth/authz/ciam/{sessionId}");
         config.put("gateway.backends[9].authz-request.branch-customer-number", "header:Branch-Customer-Number");
         config.put("gateway.backends[9].authz-request.business-transactions[0]", "business-a");
@@ -244,68 +252,61 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[14].enabled", "true");
         config.put("gateway.backends[14].securityType", "none");
 
-        config.put("gateway.backends[15].name", "transactionid-service");
+        config.put("gateway.backends[15].name", "form-service");
         config.put("gateway.backends[15].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[15].path", "/tx");
-        config.put("gateway.backends[15].schema", "transaction-service.yaml");
+        config.put("gateway.backends[15].path", "/form-auth");
+        config.put("gateway.backends[15].schema", "secondary-service.yaml");
         config.put("gateway.backends[15].enabled", "true");
-        config.put("gateway.backends[15].securityType", "transactionid");
-        config.put("gateway.backends[15].securityConfig.auth-path", "/auth/transactions");
-        config.put("gateway.backends[15].securityConfig.request-body.processId", "header:Process-Id");
-        config.put("gateway.backends[15].securityConfig.response-headers.x-request-id", "transactionId");
+        config.put("gateway.backends[15].securityType", "form");
+        config.put("gateway.backends[15].securityConfig.service", "auth");
+        config.put("gateway.backends[15].securityConfig.auth-path", "/auth/form");
+        config.put("gateway.backends[15].securityConfig.form-params.grant_type", "literal:client_credentials");
+        config.put("gateway.backends[15].securityConfig.form-params.client_id", "header:Client-Id");
+        config.put("gateway.backends[15].securityConfig.form-params.client_secret", "cookie:clientSecret");
+        config.put("gateway.backends[15].securityConfig.form-params.scope", "literal:appointments.read");
+        config.put("gateway.backends[15].securityConfig.response-headers.Authorization", "access_token");
+        config.put("gateway.backends[15].securityConfig.response-header-prefixes.Authorization", "Bearer");
+        config.put("gateway.backends[15].securityConfig.response-headers.X-Tenant-Token", "tenant_token");
 
-        config.put("gateway.backends[16].name", "form-service");
+        config.put("gateway.backends[16].name", "form-inline-service");
         config.put("gateway.backends[16].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[16].path", "/form-auth");
-        config.put("gateway.backends[16].schema", "secondary-service.yaml");
+        config.put("gateway.backends[16].path", "/form-inline");
+        config.put("gateway.backends[16].schema", "form-inline-service.yaml");
         config.put("gateway.backends[16].enabled", "true");
         config.put("gateway.backends[16].securityType", "form");
-        config.put("gateway.backends[16].securityConfig.auth-path", "/auth/form");
+        config.put("gateway.backends[16].securityConfig.service", "inline");
         config.put("gateway.backends[16].securityConfig.form-params.grant_type", "literal:client_credentials");
         config.put("gateway.backends[16].securityConfig.form-params.client_id", "header:Client-Id");
         config.put("gateway.backends[16].securityConfig.form-params.client_secret", "cookie:clientSecret");
-        config.put("gateway.backends[16].securityConfig.form-params.scope", "literal:appointments.read");
-        config.put("gateway.backends[16].securityConfig.response-headers.Authorization", "access_token");
-        config.put("gateway.backends[16].securityConfig.response-header-prefixes.Authorization", "Bearer");
-        config.put("gateway.backends[16].securityConfig.response-headers.X-Tenant-Token", "tenant_token");
 
-        config.put("gateway.backends[17].name", "form-inline-service");
+        config.put("gateway.backends[17].name", "jwt-custom-auth-path-service");
         config.put("gateway.backends[17].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[17].path", "/form-inline");
-        config.put("gateway.backends[17].schema", "form-inline-service.yaml");
+        config.put("gateway.backends[17].path", "/jwt-custom-auth-path");
+        config.put("gateway.backends[17].schema", "secondary-service.yaml");
         config.put("gateway.backends[17].enabled", "true");
-        config.put("gateway.backends[17].securityType", "form");
-        config.put("gateway.backends[17].securityConfig.mode", "inline");
-        config.put("gateway.backends[17].securityConfig.form-params.grant_type", "literal:client_credentials");
-        config.put("gateway.backends[17].securityConfig.form-params.client_id", "header:Client-Id");
-        config.put("gateway.backends[17].securityConfig.form-params.client_secret", "cookie:clientSecret");
+        config.put("gateway.backends[17].securityType", "jwt");
+        config.put("gateway.backends[17].auth-request.service", "auth");
+        config.put("gateway.backends[17].auth-request.path", "/custom-auth/tokens/{sessionId}");
+        config.put("gateway.backends[17].auth-request.btx[0]", "FirstFunction");
 
-        config.put("gateway.backends[18].name", "jwt-custom-auth-path-service");
+        config.put("gateway.backends[18].name", "customer-profile-soap-service");
         config.put("gateway.backends[18].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[18].path", "/jwt-custom-auth-path");
-        config.put("gateway.backends[18].schema", "secondary-service.yaml");
+        config.put("gateway.backends[18].path", "/soap/customer-profile");
+        config.put("gateway.backends[18].schema", "customer-profile.yaml");
         config.put("gateway.backends[18].enabled", "true");
+        config.put("gateway.backends[18].protocol", "soap");
         config.put("gateway.backends[18].securityType", "jwt");
-        config.put("gateway.backends[18].auth-request.path", "/custom-auth/tokens/{sessionId}");
+        config.put("gateway.backends[18].auth-request.service", "auth");
         config.put("gateway.backends[18].auth-request.btx[0]", "FirstFunction");
+        config.put("gateway.backends[18].soap.version", "1.1");
+        config.put("gateway.backends[18].soap.soap-action", "urn:GetCustomerProfile");
 
-        config.put("gateway.backends[19].name", "customer-profile-soap-service");
+        config.put("gateway.backends[19].name", "compression-sensitive-service");
         config.put("gateway.backends[19].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[19].path", "/soap/customer-profile");
-        config.put("gateway.backends[19].schema", "customer-profile.yaml");
+        config.put("gateway.backends[19].path", "/compression");
+        config.put("gateway.backends[19].schema", "secondary-service.yaml");
         config.put("gateway.backends[19].enabled", "true");
-        config.put("gateway.backends[19].protocol", "soap");
-        config.put("gateway.backends[19].securityType", "jwt");
-        config.put("gateway.backends[19].auth-request.btx[0]", "FirstFunction");
-        config.put("gateway.backends[19].soap.version", "1.1");
-        config.put("gateway.backends[19].soap.soap-action", "urn:GetCustomerProfile");
-
-        config.put("gateway.backends[20].name", "compression-sensitive-service");
-        config.put("gateway.backends[20].baseUrl", backendBaseUrl);
-        config.put("gateway.backends[20].path", "/compression");
-        config.put("gateway.backends[20].schema", "secondary-service.yaml");
-        config.put("gateway.backends[20].enabled", "true");
-        config.put("gateway.backends[20].securityType", "none");
+        config.put("gateway.backends[19].securityType", "none");
 
         return config;
     }
@@ -354,10 +355,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
 
     public static String getLastCiamCustomerAccessToken() {
         return LAST_CIAM_CUSTOMER_ACCESS_TOKEN.get();
-    }
-
-    public static String getLastTransactionRequestId() {
-        return LAST_TRANSACTION_REQUEST_ID.get();
     }
 
     public static String getLastFormAuthorization() {
@@ -475,10 +472,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
             respond(exchange, 200,
                 "{\"serverlessAuthorization\":\"%s\",\"internal\":\"discard-me\"}".formatted(
                     exchange.getRequestHeaders().getFirst("X-Serverless-Authorization"))));
-        backendServer.createContext("/tx/appointments", exchange -> {
-            LAST_TRANSACTION_REQUEST_ID.set(exchange.getRequestHeaders().getFirst("x-request-id"));
-            respond(exchange, 200, "{\"status\":\"tx-ok\",\"internal\":\"discard-me\"}");
-        });
         backendServer.createContext("/form-auth/ping", exchange -> {
             LAST_FORM_AUTHORIZATION.set(exchange.getRequestHeaders().getFirst("Authorization"));
             LAST_FORM_TENANT_TOKEN.set(exchange.getRequestHeaders().getFirst("X-Tenant-Token"));
@@ -692,7 +685,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         authServer.createContext("/auth/authz/eidp", exchange -> {
             String sessionId = exchange.getRequestURI().getPath().substring("/auth/authz/eidp/".length());
             String serverlessAuthorization = exchange.getRequestHeaders().getFirst("X-Serverless-Authorization");
-            if (proxyCloudRunAuthMissing(serverlessAuthorization)) {
+            if (proxyCloudRunAuthzMissing(serverlessAuthorization)) {
                 respond(exchange, 401, "{\"error\":\"missing cloud run auth\"}");
                 return;
             }
@@ -724,7 +717,7 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
 
         authServer.createContext("/auth/authz/ciam", exchange -> {
             String serverlessAuthorization = exchange.getRequestHeaders().getFirst("X-Serverless-Authorization");
-            if (proxyCloudRunAuthMissing(serverlessAuthorization)) {
+            if (proxyCloudRunAuthzMissing(serverlessAuthorization)) {
                 respond(exchange, 401, "{\"error\":\"missing cloud run auth\"}");
                 return;
             }
@@ -748,21 +741,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
                 200,
                 "{\"customerAccessToken\":\"ciam-customer-token\",\"allowedServiceShopTransactions\":[\"shop-b\"]}"
             );
-        });
-
-        authServer.createContext("/auth/transactions", exchange -> {
-            String serverlessAuthorization = exchange.getRequestHeaders().getFirst("X-Serverless-Authorization");
-            if (proxyCloudRunAuthMissing(serverlessAuthorization)) {
-                respond(exchange, 401, "{\"error\":\"missing cloud run auth\"}");
-                return;
-            }
-            JsonNode requestBody = OBJECT_MAPPER.readTree(exchange.getRequestBody());
-            String processId = requestBody.path("processId").asText(null);
-            if (processId == null || processId.isBlank()) {
-                respond(exchange, 400, "{\"error\":\"missing processId\"}");
-                return;
-            }
-            respond(exchange, 200, "{\"transactionId\":\"tx-" + processId + "\"}");
         });
 
         authServer.createContext("/auth/form", exchange -> {
@@ -791,6 +769,10 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
 
     private boolean proxyCloudRunAuthMissing(String serverlessAuthorization) {
         return !"Bearer test-id-token-for:https://oauth-service-ew.a.run.app/".equals(serverlessAuthorization);
+    }
+
+    private boolean proxyCloudRunAuthzMissing(String serverlessAuthorization) {
+        return !"Bearer test-id-token-for:https://oauthz-service-ew.a.run.app/".equals(serverlessAuthorization);
     }
 
     private static void assertAuthRequestShape(JsonNode requestBody) {

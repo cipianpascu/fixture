@@ -155,7 +155,7 @@ public class FormAuthService implements AuthService {
     }
 
     private boolean inlineMode() {
-        return "inline".equalsIgnoreCase(securityConfig.getOrDefault("mode", "auth-service"));
+        return "inline".equalsIgnoreCase(securityConfig.getOrDefault("service", "inline"));
     }
 
     private Map<String, String> parseFormBody(String requestBody) {

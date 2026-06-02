@@ -279,21 +279,6 @@ class ProxyResourceTest extends AbstractProxyQuarkusTest {
     }
 
     @Test
-    void mapsHeaderDrivenTransactionIdIntoBackendRequestId() {
-        given()
-            .contentType(ContentType.JSON)
-            .header("Process-Id", "p123")
-            .body("{\"payload\":\"hello\"}")
-            .when()
-            .post("/api/v1/transactionid-service/appointments")
-            .then()
-            .statusCode(200)
-            .body("status", equalTo("tx-ok"));
-
-        assertEquals("tx-p123", ProxyTestResource.getLastTransactionRequestId());
-    }
-
-    @Test
     void mapsFormEncodedAuthParametersIntoBackendHeaders() {
         int authCallsBefore = ProxyTestResource.getFormAuthCalls();
         Response response = given()

@@ -26,20 +26,26 @@ import java.util.Optional;
 @Slf4j
 public class JwtAuthService implements AuthService {
     
-    private final ProxyProperties proxyProperties;
-    private final AuthServiceCaller authServiceCaller;
+    private final Optional<AuthServiceCaller> authServiceCaller;
+    private final Optional<ResolvedAuthServiceConfig> authServiceConfig;
+    private final Optional<AuthServiceCaller> authzServiceCaller;
+    private final Optional<ResolvedAuthServiceConfig> authzServiceConfig;
     private final Optional<ProxyProperties.AuthRequestConfig> authRequestConfig;
     private final Optional<ProxyProperties.AuthzRequestConfig> authzRequestConfig;
     private final Map<String, String> securityConfig;
     
     public JwtAuthService(
-        ProxyProperties proxyProperties,
-        AuthServiceCaller authServiceCaller,
+        Optional<AuthServiceCaller> authServiceCaller,
+        Optional<ResolvedAuthServiceConfig> authServiceConfig,
+        Optional<AuthServiceCaller> authzServiceCaller,
+        Optional<ResolvedAuthServiceConfig> authzServiceConfig,
         Optional<ProxyProperties.AuthRequestConfig> authRequestConfig,
         Optional<ProxyProperties.AuthzRequestConfig> authzRequestConfig,
         Map<String, String> securityConfig) {
-        this.proxyProperties = proxyProperties;
         this.authServiceCaller = authServiceCaller;
+        this.authServiceConfig = authServiceConfig;
+        this.authzServiceCaller = authzServiceCaller;
+        this.authzServiceConfig = authzServiceConfig;
         this.authRequestConfig = authRequestConfig;
         this.authzRequestConfig = authzRequestConfig;
         this.securityConfig = securityConfig == null ? Map.of() : Map.copyOf(securityConfig);
@@ -47,21 +53,10 @@ public class JwtAuthService implements AuthService {
     
     @Override
     public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody) {
-        if (!proxyProperties.auth().enabled()) {
-            log.debug("Auth is disabled, skipping token retrieval");
-            return;
-        }
-        
-        // Extract sessionId from request
-        Optional<String> sessionId = extractSessionId(request);
-        if (sessionId.isEmpty()) {
-            throw new AuthenticationRequiredException(
-                "Missing session identifier for JWT-authenticated backend");
-        }
-        
         log.debug(
-            "Found sessionId: {}, requesting auth sparteGvo={}, btx={}, pss={} and authz branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
-            sessionId.get(),
+            "Preparing JWT auth for auth-service={}, authz-service={}, auth sparteGvo={}, btx={}, pss={} and authz branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
+            authServiceConfig.map(ResolvedAuthServiceConfig::name).orElse(null),
+            authzServiceConfig.map(ResolvedAuthServiceConfig::name).orElse(null),
             authRequestConfig.flatMap(ProxyProperties.AuthRequestConfig::sparteGvo).orElse(null),
             authRequestConfig.flatMap(ProxyProperties.AuthRequestConfig::btx).orElse(null),
             authRequestConfig.flatMap(ProxyProperties.AuthRequestConfig::pss).orElse(null),
@@ -71,11 +66,11 @@ public class JwtAuthService implements AuthService {
             authzRequestConfig.flatMap(ProxyProperties.AuthzRequestConfig::serviceShopTransactions).orElse(null)
         );
 
-        Optional<AuthTokens> authTokens = authRequestConfig.isPresent()
-            ? retrieveTokens(sessionId.get())
+        Optional<AuthTokens> authTokens = authRequestConfig.isPresent() && authServiceConfig.map(ResolvedAuthServiceConfig::enabled).orElse(false)
+            ? retrieveTokens(resolveSessionId(request, authServiceConfig, "auth"))
             : Optional.empty();
-        Optional<AuthzTokens> authzTokens = authzRequestConfig.isPresent()
-            ? retrieveAuthorizationTokens(sessionId.get(), request)
+        Optional<AuthzTokens> authzTokens = authzRequestConfig.isPresent() && authzServiceConfig.map(ResolvedAuthServiceConfig::enabled).orElse(false)
+            ? retrieveAuthorizationTokens(resolveSessionId(request, authzServiceConfig, "authz"), request)
             : Optional.empty();
 
         if (authTokens.isPresent()) {
@@ -129,22 +124,33 @@ public class JwtAuthService implements AuthService {
     /**
      * Extract sessionId from request headers or cookies
      */
-    private Optional<String> extractSessionId(ProxyRequestContext request) {
+    private Optional<String> extractSessionId(ProxyRequestContext request, ResolvedAuthServiceConfig serviceConfig) {
         // Try header first
-        String headerName = proxyProperties.auth().sessionIdHeader();
+        String headerName = serviceConfig.sessionIdHeader();
         String sessionId = request.header(headerName);
         if (sessionId != null && !sessionId.isEmpty()) {
             return Optional.of(sessionId);
         }
         
         // Try cookie
-        String cookieName = proxyProperties.auth().sessionIdCookie();
+        String cookieName = serviceConfig.sessionIdCookie();
         String cookieValue = request.cookie(cookieName);
         if (cookieValue != null && !cookieValue.isEmpty()) {
             return Optional.of(cookieValue);
         }
         
         return Optional.empty();
+    }
+
+    private String resolveSessionId(
+        ProxyRequestContext request,
+        Optional<ResolvedAuthServiceConfig> serviceConfig,
+        String flowName) {
+        ResolvedAuthServiceConfig config = serviceConfig.orElseThrow(() -> new AuthServiceException(
+            "Missing %s service configuration for JWT-authenticated backend".formatted(flowName)));
+        return extractSessionId(request, config)
+            .orElseThrow(() -> new AuthenticationRequiredException(
+                "Missing session identifier for JWT-authenticated backend"));
     }
     
     /**
@@ -153,8 +159,10 @@ public class JwtAuthService implements AuthService {
     private Optional<AuthTokens> retrieveTokens(String sessionId) {
         try {
             ProxyProperties.AuthRequestConfig config = authRequestConfig.orElseThrow();
+            AuthServiceCaller caller = authServiceCaller.orElseThrow();
             log.debug(
-                "Calling auth service with sessionId: {}, path={}, sparteGvo={}, btx={}, pss={}",
+                "Calling auth service '{}' with sessionId: {}, path={}, sparteGvo={}, btx={}, pss={}",
+                authServiceConfig.map(ResolvedAuthServiceConfig::name).orElse("unknown"),
                 sessionId,
                 config.path().orElse("/auth/tokens/{sessionId}"),
                 config.sparteGvo().orElse(null),
@@ -169,7 +177,7 @@ public class JwtAuthService implements AuthService {
                     config.pss().orElse(null)
                 );
 
-            AuthTokens tokens = authServiceCaller.postJson(
+            AuthTokens tokens = caller.postJson(
                 resolveAuthPath(config.path().orElse(null), sessionId),
                 authRequest,
                 AuthTokens.class
@@ -211,12 +219,14 @@ public class JwtAuthService implements AuthService {
     private Optional<AuthzTokens> retrieveAuthorizationTokens(String sessionId, ProxyRequestContext request) {
         try {
             ProxyProperties.AuthzRequestConfig config = authzRequestConfig.orElseThrow();
+            AuthServiceCaller caller = authzServiceCaller.orElseThrow();
             String branchCustomerNumber = resolveBranchCustomerNumber(request)
                 .orElseThrow(() -> new AuthenticationRequiredException(
                     "Missing branchCustomerNumber for JWT authz flow"));
 
             log.debug(
-                "Calling authz service with sessionId: {} and branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
+                "Calling authz service '{}' with sessionId: {} and branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
+                authzServiceConfig.map(ResolvedAuthServiceConfig::name).orElse("unknown"),
                 sessionId,
                 branchCustomerNumber,
                 config.gvoEntitlementsList().orElse(null),
@@ -231,7 +241,7 @@ public class JwtAuthService implements AuthService {
                 config.serviceShopTransactions().orElse(null)
             );
 
-            AuthzTokens tokens = authServiceCaller.postJson(
+            AuthzTokens tokens = caller.postJson(
                 resolveAuthzPath(config.path(), sessionId),
                 authzRequest,
                 AuthzTokens.class
