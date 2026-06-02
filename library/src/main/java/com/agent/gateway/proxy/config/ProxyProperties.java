@@ -77,7 +77,7 @@ public interface ProxyProperties {
     }
 
     interface AuthRequestConfig {
-        String service();
+        Optional<String> service();
 
         Optional<String> path();
 
@@ -90,7 +90,7 @@ public interface ProxyProperties {
     }
 
     interface AuthzRequestConfig {
-        String service();
+        Optional<String> service();
 
         String path();
 

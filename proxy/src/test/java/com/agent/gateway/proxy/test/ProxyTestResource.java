@@ -186,7 +186,6 @@ public class ProxyTestResource implements QuarkusTestResourceLifecycleManager {
         config.put("gateway.backends[7].schema", "secondary-service.yaml");
         config.put("gateway.backends[7].enabled", "true");
         config.put("gateway.backends[7].securityType", "jwt");
-        config.put("gateway.backends[7].auth-request.service", "auth");
         config.put("gateway.backends[7].auth-request.btx[0]", "FirstFunction");
 
         config.put("gateway.backends[8].name", "jwt-authz-eidp-service");

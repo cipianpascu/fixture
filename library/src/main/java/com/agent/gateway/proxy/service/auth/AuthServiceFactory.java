@@ -58,14 +58,20 @@ public class AuthServiceFactory {
                 "JWT auth configured but both auth-request and authz-request are missing for backend '%s'"
                     .formatted(backend.name()));
         }
+        String authServiceName = backend.authRequest()
+            .flatMap(ProxyProperties.AuthRequestConfig::service)
+            .orElse(AuthServiceConfigRegistry.DEFAULT_JWT_SERVICE);
+        String authzServiceName = backend.authzRequest()
+            .flatMap(ProxyProperties.AuthzRequestConfig::service)
+            .orElse(AuthServiceConfigRegistry.DEFAULT_JWT_SERVICE);
         log.debug(
             "Creating JWT auth service for backend: {} with auth-request: service={}, sparteGvo={}, btx={}, pss={} and authz-request: service={}, path={}, branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
             backend.name(),
-            backend.authRequest().map(ProxyProperties.AuthRequestConfig::service).orElse(null),
+            backend.authRequest().isPresent() ? authServiceName : null,
             backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::sparteGvo).orElse(null),
             backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::btx).orElse(null),
             backend.authRequest().flatMap(ProxyProperties.AuthRequestConfig::pss).orElse(null),
-            backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::service).orElse(null),
+            backend.authzRequest().isPresent() ? authzServiceName : null,
             backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::path).orElse(null),
             backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::branchCustomerNumber).orElse(null),
             backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::gvoEntitlementsList).orElse(null),
@@ -73,14 +79,10 @@ public class AuthServiceFactory {
             backend.authzRequest().flatMap(ProxyProperties.AuthzRequestConfig::serviceShopTransactions).orElse(null)
         );
         return new JwtAuthService(
-            backend.authRequest().map(ProxyProperties.AuthRequestConfig::service)
-                .map(authServiceCallerFactory::get),
-            backend.authRequest().map(ProxyProperties.AuthRequestConfig::service)
-                .map(authServiceCallerFactory::getConfig),
-            backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::service)
-                .map(authServiceCallerFactory::get),
-            backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::service)
-                .map(authServiceCallerFactory::getConfig),
+            backend.authRequest().map(ignored -> authServiceCallerFactory.get(authServiceName)),
+            backend.authRequest().map(ignored -> authServiceCallerFactory.getConfig(authServiceName)),
+            backend.authzRequest().map(ignored -> authServiceCallerFactory.get(authzServiceName)),
+            backend.authzRequest().map(ignored -> authServiceCallerFactory.getConfig(authzServiceName)),
             backend.authRequest(),
             backend.authzRequest(),
             backend.securityConfig()

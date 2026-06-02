@@ -12,12 +12,12 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
 public class AuthServiceConfigRegistry {
+    static final String DEFAULT_JWT_SERVICE = "auth";
 
     private final Map<String, ResolvedAuthServiceConfig> configs = new ConcurrentHashMap<>();
     private volatile boolean initialized;
@@ -59,8 +59,12 @@ public class AuthServiceConfigRegistry {
     private void loadReferencedServices() {
         Set<String> referencedServices = new LinkedHashSet<>();
         for (ProxyProperties.BackendDefinition backend : proxyProperties.backends()) {
-            backend.authRequest().map(ProxyProperties.AuthRequestConfig::service).ifPresent(referencedServices::add);
-            backend.authzRequest().map(ProxyProperties.AuthzRequestConfig::service).ifPresent(referencedServices::add);
+            backend.authRequest()
+                .ifPresent(authRequest -> referencedServices.add(
+                    authRequest.service().orElse(DEFAULT_JWT_SERVICE)));
+            backend.authzRequest()
+                .ifPresent(authzRequest -> referencedServices.add(
+                    authzRequest.service().orElse(DEFAULT_JWT_SERVICE)));
         }
         for (String serviceName : referencedServices) {
             configs.put(serviceName, resolveServiceConfig(serviceName));

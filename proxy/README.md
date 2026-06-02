@@ -96,7 +96,6 @@ gateway:
       enabled: true
       securityType: jwt
       auth-request:
-        service: auth
         sparte-gvo:
           - a
           - b
@@ -161,7 +160,7 @@ Additional JWT token sources from authz are:
 
 For `securityType: jwt`, `auth-request` fields are independently optional:
 
-- `service`: named `gateway.<service>` profile to use for the auth call
+- `service`: named `gateway.<service>` profile to use for the auth call; defaults to `auth`
 - `path`: auth service path override; supports `{sessionId}` placeholder and defaults to `/auth/tokens/{sessionId}`
 - `sparte-gvo`
 - `btx`
@@ -169,11 +168,11 @@ For `securityType: jwt`, `auth-request` fields are independently optional:
 
 Only configure the lists required by the target auth flow. Omitted fields are not sent to the auth service.
 
-JWT auth requests use the `gateway.<service>.service-url` configured by `auth-request.service`. `auth-request.path` only overrides the relative path used for that backend’s auth call.
+JWT auth requests use the `gateway.<service>.service-url` configured by `auth-request.service`, or `gateway.auth.service-url` when `service` is omitted. `auth-request.path` only overrides the relative path used for that backend’s auth call.
 
 For `securityType: jwt`, `authz-request` fields are also optional and can be used independently or together with `auth-request`:
 
-- `service`: named `gateway.<service>` profile to use for the authz call
+- `service`: named `gateway.<service>` profile to use for the authz call; defaults to `auth`
 - `path`: authz service path; supports `{sessionId}` placeholder
 - `branch-customer-number`: branch/customer number mapping using a plain literal, `literal:<value>`, `header:<Header-Name>`, or `cookie:<Cookie-Name>`
 - `gvo-entitlements-list`: EIDP authz list

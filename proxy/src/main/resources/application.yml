@@ -125,7 +125,6 @@ gateway:
       #     - "*.svc.cluster.local"
       # tls-profile: internal-ca
       auth-request:
-        service: auth
         sparte-gvo:
           - a
           - b
@@ -140,7 +139,7 @@ gateway:
       #
       # Optional auth path override:
       # auth-request:
-      #   service: auth
+      #   # service defaults to auth when omitted
       #   path: /custom-auth/tokens/{sessionId}
       #   btx:
       #     - FirstFunction
@@ -167,7 +166,7 @@ gateway:
     #   enabled: true
     #   securityType: jwt
     #   auth-request:
-    #     service: auth                         # Any non-inline value uses the configured gateway.auth caller
+    #     # service defaults to auth when omitted
     #     sparte-gvo:
     #       - a
     #       - b
