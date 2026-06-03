@@ -93,51 +93,6 @@ class TlsContextFactoryTest {
             }
 
             @Override
-            public AuthConfig auth() {
-                return new AuthConfig() {
-                    @Override
-                    public boolean enabled() {
-                        return true;
-                    }
-
-                    @Override
-                    public String serviceUrl() {
-                        return "https://auth.example.com";
-                    }
-
-                    @Override
-                    public String sessionIdHeader() {
-                        return "X-Session-Id";
-                    }
-
-                    @Override
-                    public String sessionIdCookie() {
-                        return "sessionId";
-                    }
-
-                    @Override
-                    public Duration timeout() {
-                        return Duration.ofSeconds(5);
-                    }
-
-                    @Override
-                    public Optional<String> tlsProfile() {
-                        return Optional.empty();
-                    }
-
-                    @Override
-                    public Optional<String> securityType() {
-                        return Optional.empty();
-                    }
-
-                    @Override
-                    public Map<String, String> securityConfig() {
-                        return Map.of();
-                    }
-                };
-            }
-
-            @Override
             public Optional<TlsConfig> tls() {
                 return Optional.of(() -> profiles);
             }

@@ -15,9 +15,6 @@ public class ConfiguredProxyProperties implements ProxyProperties {
     SchemaConfigMapping schemaConfig;
 
     @Inject
-    AuthConfigMapping authConfig;
-
-    @Inject
     TlsConfigMapping tlsConfig;
 
     @Inject
@@ -26,11 +23,6 @@ public class ConfiguredProxyProperties implements ProxyProperties {
     @Override
     public SchemaConfig schemas() {
         return schemaConfig;
-    }
-
-    @Override
-    public AuthConfig auth() {
-        return authConfig;
     }
 
     @Override
@@ -45,10 +37,6 @@ public class ConfiguredProxyProperties implements ProxyProperties {
 
     @ConfigMapping(prefix = "gateway.schemas")
     public interface SchemaConfigMapping extends ProxyProperties.SchemaConfig {
-    }
-
-    @ConfigMapping(prefix = "gateway.auth")
-    public interface AuthConfigMapping extends ProxyProperties.AuthConfig {
     }
 
     @ConfigMapping(prefix = "gateway.tls")

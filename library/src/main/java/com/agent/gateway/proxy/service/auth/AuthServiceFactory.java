@@ -17,9 +17,6 @@ import java.util.Map;
 public class AuthServiceFactory {
     
     @Inject
-    ProxyProperties proxyProperties;
-
-    @Inject
     AuthServiceCallerFactory authServiceCallerFactory;
 
     @Inject
@@ -119,7 +116,7 @@ public class AuthServiceFactory {
     private AuthService createFormAuthService(ProxyProperties.BackendDefinition backend) {
         log.debug("Creating form auth service for backend: {}", backend.name());
         return new FormAuthService(
-            proxyProperties,
+            authServiceCallerFactory.getConfig("auth"),
             authServiceCallerFactory.get("auth"),
             backend.securityConfig()
         );

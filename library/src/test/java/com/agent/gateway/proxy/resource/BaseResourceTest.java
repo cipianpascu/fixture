@@ -185,11 +185,6 @@ class BaseResourceTest {
             }
 
             @Override
-            public AuthConfig auth() {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
             public Optional<TlsConfig> tls() {
                 return Optional.empty();
             }

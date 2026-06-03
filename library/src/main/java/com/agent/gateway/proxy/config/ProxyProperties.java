@@ -17,9 +17,6 @@ public interface ProxyProperties {
     @WithName("schemas")
     SchemaConfig schemas();
     
-    @WithName("auth")
-    AuthConfig auth();
-
     @WithName("tls")
     Optional<TlsConfig> tls();
     

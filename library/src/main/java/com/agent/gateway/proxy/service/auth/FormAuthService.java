@@ -1,6 +1,5 @@
 package com.agent.gateway.proxy.service.auth;
 
-import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.exception.AuthServiceException;
 import com.agent.gateway.proxy.exception.AuthenticationRequiredException;
 import com.agent.gateway.proxy.exception.ProxyConfigurationException;
@@ -19,22 +18,22 @@ import java.util.stream.Collectors;
 @Slf4j
 public class FormAuthService implements AuthService {
 
-    private final ProxyProperties proxyProperties;
+    private final ResolvedAuthServiceConfig serviceConfig;
     private final AuthServiceCaller authServiceCaller;
     private final Map<String, String> securityConfig;
 
     public FormAuthService(
-        ProxyProperties proxyProperties,
+        ResolvedAuthServiceConfig serviceConfig,
         AuthServiceCaller authServiceCaller,
         Map<String, String> securityConfig) {
-        this.proxyProperties = proxyProperties;
+        this.serviceConfig = serviceConfig;
         this.authServiceCaller = authServiceCaller;
         this.securityConfig = securityConfig == null ? Map.of() : Map.copyOf(securityConfig);
     }
 
     @Override
     public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody) {
-        if (!proxyProperties.auth().enabled()) {
+        if (!serviceConfig.enabled()) {
             log.debug("Auth is disabled, skipping form auth lookup");
             return;
         }

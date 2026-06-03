@@ -26,10 +26,6 @@ public class TlsContextFactory {
     @Inject
     ProxyProperties proxyProperties;
 
-    public Optional<SSLContext> createAuthSslContext() {
-        return createSslContext(proxyProperties.auth().tlsProfile());
-    }
-
     public Optional<SSLContext> createServiceSslContext(Optional<String> profileName) {
         return createSslContext(profileName);
     }
