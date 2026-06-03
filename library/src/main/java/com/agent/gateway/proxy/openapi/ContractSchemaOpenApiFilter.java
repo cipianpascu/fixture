@@ -1,5 +1,6 @@
 package com.agent.gateway.proxy.openapi;
 
+import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.service.SchemaLoader;
 import io.quarkus.arc.Arc;
 import io.quarkus.smallrye.openapi.OpenApiFilter;
@@ -10,7 +11,9 @@ import org.eclipse.microprofile.openapi.models.Components;
 import org.eclipse.microprofile.openapi.models.OpenAPI;
 import org.eclipse.microprofile.openapi.models.Operation;
 import org.eclipse.microprofile.openapi.models.PathItem;
+
 import java.util.Map;
+import java.util.Optional;
 
 @OpenApiFilter(stages = OpenApiFilter.RunStage.RUNTIME_STARTUP)
 @Slf4j
@@ -19,6 +22,7 @@ public class ContractSchemaOpenApiFilter implements OASFilter {
     @Override
     public void filterOpenAPI(OpenAPI openAPI) {
         SchemaLoader schemaLoader = Arc.container().instance(SchemaLoader.class).get();
+        ProxyProperties proxyProperties = Arc.container().instance(ProxyProperties.class).get();
         schemaLoader.ensureLoaded();
         if (openAPI == null || openAPI.getPaths() == null || openAPI.getPaths().getPathItems() == null) {
             return;
@@ -35,6 +39,17 @@ public class ContractSchemaOpenApiFilter implements OASFilter {
             }
 
             PathItem targetPathItem = pathEntry.getValue();
+            org.eclipse.microprofile.openapi.models.OpenAPI boundContractDocument =
+                findBoundContractDocument(publicPath, proxyProperties, schemaLoader).orElse(null);
+            if (boundContractDocument != null) {
+                PathItem contractPathItem = findMatchingPathItem(boundContractDocument, publicPath);
+                if (contractPathItem != null) {
+                    applyContractPathItem(targetPathItem, contractPathItem);
+                    mergeComponents(openAPI, boundContractDocument);
+                    continue;
+                }
+            }
+
             for (org.eclipse.microprofile.openapi.models.OpenAPI contractDocument : schemaLoader.getDocumentationSchemas().values()) {
                 if (contractDocument.getPaths() == null || contractDocument.getPaths().getPathItems() == null) {
                     continue;
@@ -54,6 +69,34 @@ public class ContractSchemaOpenApiFilter implements OASFilter {
 
     private boolean isGenericProxyPath(String publicPath) {
         return publicPath.contains("{backendName}") || publicPath.contains("{path}");
+    }
+
+    Optional<org.eclipse.microprofile.openapi.models.OpenAPI> findBoundContractDocument(
+        String publicPath,
+        ProxyProperties proxyProperties,
+        SchemaLoader schemaLoader
+    ) {
+        return bindingSegment(publicPath)
+            .flatMap(segment -> proxyProperties.backends().stream()
+                .filter(backend -> backend.name().equals(segment))
+                .findFirst())
+            .flatMap(ProxyProperties.BackendDefinition::schema)
+            .flatMap(schemaLoader::getDocumentationSchema);
+    }
+
+    Optional<String> bindingSegment(String publicPath) {
+        String[] segments = pathSegments(publicPath);
+        String lastStaticBeforeTemplate = null;
+        for (String segment : segments) {
+            if (segment.startsWith("{") && segment.endsWith("}")) {
+                break;
+            }
+            lastStaticBeforeTemplate = segment;
+        }
+        if (lastStaticBeforeTemplate != null) {
+            return Optional.of(lastStaticBeforeTemplate);
+        }
+        return Optional.empty();
     }
 
     PathItem findMatchingPathItem(
