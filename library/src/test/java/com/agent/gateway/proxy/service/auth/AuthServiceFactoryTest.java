@@ -100,6 +100,11 @@ class AuthServiceFactoryTest {
             }
 
             @Override
+            public Optional<ProxyProperties.BackendHistoryConfig> history() {
+                return Optional.empty();
+            }
+
+            @Override
             public Optional<String> tlsProfile() {
                 return Optional.empty();
             }

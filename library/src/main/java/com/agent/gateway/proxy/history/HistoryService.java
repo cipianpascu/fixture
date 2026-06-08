@@ -1,0 +1,356 @@
+package com.agent.gateway.proxy.history;
+
+import com.agent.gateway.proxy.config.ProxyProperties;
+import com.agent.gateway.proxy.exception.ProxyConfigurationException;
+import com.agent.gateway.proxy.model.ProxyRequestContext;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.quarkus.runtime.ShutdownEvent;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.inject.Instance;
+import jakarta.inject.Inject;
+import lombok.extern.slf4j.Slf4j;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+
+@ApplicationScoped
+@Slf4j
+public class HistoryService {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    @Inject
+    ProxyProperties proxyProperties;
+
+    @Inject
+    Instance<HistoryPayloadMapper> payloadMappers;
+
+    @Inject
+    Instance<HistoryPublisher> publishers;
+
+    private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
+        Thread thread = new Thread(runnable, "bfa-history-publisher");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    public void emit(
+        ProxyProperties.BackendDefinition backend,
+        ProxyRequestContext request,
+        String incomingBody,
+        Map<String, List<String>> outboundHeaders,
+        String outboundBody) {
+        if (!shouldEmit(backend, request)) {
+            return;
+        }
+
+        EffectiveHistoryConfig config = effectiveConfig(backend);
+        Map<String, String> additionalProperties = resolveAdditionalProperties(
+            backend.history()
+                .map(ProxyProperties.BackendHistoryConfig::additionalProperties)
+                .orElse(Map.of()),
+            request,
+            outboundHeaders
+        );
+        HistoryRequestContext context = new HistoryRequestContext(
+            backend,
+            request,
+            incomingBody,
+            outboundHeaders == null ? Map.of() : Map.copyOf(outboundHeaders),
+            outboundBody,
+            additionalProperties
+        );
+
+        Object payload = buildPayload(context, config);
+        if (payload == null) {
+            log.debug("No history payload mapper produced a payload for backend '{}'", backend.name());
+            return;
+        }
+
+        HistoryPublishRequest publishRequest = new HistoryPublishRequest(
+            backend,
+            config.provider(),
+            config.serviceUrl(),
+            config.projectId(),
+            config.topic(),
+            config.timeout(),
+            config.tlsProfile(),
+            additionalProperties,
+            payload
+        );
+
+        publish(publishRequest, config);
+    }
+
+    public Map<String, String> resolveAdditionalProperties(
+        Map<String, String> configuredProperties,
+        ProxyRequestContext request,
+        Map<String, List<String>> outboundHeaders) {
+        if (configuredProperties == null || configuredProperties.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, String> resolved = new LinkedHashMap<>();
+        Optional<JsonNode> tokenPayload = requiresTokenPayload(configuredProperties)
+            ? bearerToken(request, outboundHeaders).flatMap(this::decodeJwtPayload)
+            : Optional.empty();
+        configuredProperties.forEach((name, source) -> resolveAdditionalProperty(
+                source,
+                request,
+                outboundHeaders,
+                tokenPayload
+            )
+            .ifPresent(value -> resolved.put(name, value)));
+        return Map.copyOf(resolved);
+    }
+
+    private boolean requiresTokenPayload(Map<String, String> configuredProperties) {
+        return configuredProperties.values().stream()
+            .anyMatch(source -> source != null && source.startsWith("token:"));
+    }
+
+    private boolean shouldEmit(ProxyProperties.BackendDefinition backend, ProxyRequestContext request) {
+        if (!proxyProperties.history().enabled()) {
+            return false;
+        }
+        boolean backendEnabled = backend.history()
+            .flatMap(ProxyProperties.BackendHistoryConfig::enabled)
+            .orElse(true);
+        if (!backendEnabled) {
+            return false;
+        }
+        String method = request.method();
+        if (method == null || method.isBlank()) {
+            return false;
+        }
+        return proxyProperties.history().methods().stream()
+            .filter(value -> value != null && !value.isBlank())
+            .map(value -> value.toUpperCase(Locale.ROOT))
+            .anyMatch(value -> value.equals(method.toUpperCase(Locale.ROOT)));
+    }
+
+    private Object buildPayload(HistoryRequestContext context, EffectiveHistoryConfig config) {
+        try {
+            for (HistoryPayloadMapper mapper : payloadMappers) {
+                if (!mapper.supports(context.backend())) {
+                    continue;
+                }
+                Object payload = mapper.map(context);
+                if (payload != null) {
+                    return payload;
+                }
+            }
+            return null;
+        } catch (RuntimeException e) {
+            if (config.failOpen()) {
+                log.warn(
+                    "History payload mapping failed for backend '{}'; continuing because fail-open=true",
+                    context.backend().name(),
+                    e
+                );
+                return null;
+            }
+            throw e;
+        }
+    }
+
+    private void publish(HistoryPublishRequest request, EffectiveHistoryConfig config) {
+        HistoryPublisher publisher = resolvePublisher(request.provider());
+        Runnable publishTask = () -> {
+            try {
+                publisher.publish(request);
+            } catch (RuntimeException e) {
+                if (config.confirmed() && !config.failOpen()) {
+                    throw e;
+                }
+                log.warn(
+                    "History publish failed for backend '{}'; continuing because delivery-mode={} fail-open={}",
+                    request.backend().name(),
+                    config.deliveryMode(),
+                    config.failOpen(),
+                    e
+                );
+            }
+        };
+
+        if (config.confirmed()) {
+            publishTask.run();
+            return;
+        }
+
+        try {
+            executor.execute(publishTask);
+        } catch (RejectedExecutionException e) {
+            if (config.failOpen()) {
+                log.warn(
+                    "History publish task submission failed for backend '{}'; continuing because fail-open=true",
+                    request.backend().name(),
+                    e
+                );
+                return;
+            }
+            throw e;
+        }
+    }
+
+    private HistoryPublisher resolvePublisher(String provider) {
+        for (HistoryPublisher publisher : publishers) {
+            if (publisher.supports(provider)) {
+                return publisher;
+            }
+        }
+        throw new ProxyConfigurationException("No history publisher configured for provider '%s'".formatted(provider));
+    }
+
+    private Optional<String> resolveAdditionalProperty(
+        String source,
+        ProxyRequestContext request,
+        Map<String, List<String>> outboundHeaders,
+        Optional<JsonNode> tokenPayload) {
+        if (source == null || source.isBlank()) {
+            return Optional.empty();
+        }
+        if (source.startsWith("literal:")) {
+            return Optional.of(source.substring("literal:".length()));
+        }
+        if (source.startsWith("header:")) {
+            String headerName = source.substring("header:".length());
+            return firstHeaderValue(request.header(headerName), outboundHeaders, headerName);
+        }
+        if (source.startsWith("cookie:")) {
+            return Optional.ofNullable(request.cookie(source.substring("cookie:".length())));
+        }
+        if (source.startsWith("token:")) {
+            return resolveTokenClaim(source.substring("token:".length()), tokenPayload);
+        }
+        throw new ProxyConfigurationException("Unsupported history additional property source '%s'".formatted(source));
+    }
+
+    private Optional<String> firstHeaderValue(
+        String incomingValue,
+        Map<String, List<String>> outboundHeaders,
+        String headerName) {
+        if (incomingValue != null && !incomingValue.isBlank()) {
+            return Optional.of(incomingValue);
+        }
+        if (outboundHeaders == null || headerName == null) {
+            return Optional.empty();
+        }
+        List<String> values = outboundHeaders.get(headerName.toLowerCase(Locale.ROOT));
+        if (values == null || values.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(values.getFirst()).filter(value -> !value.isBlank());
+    }
+
+    private Optional<String> resolveTokenClaim(
+        String claimExpression,
+        Optional<JsonNode> tokenPayload) {
+        if (tokenPayload.isEmpty()) {
+            return Optional.empty();
+        }
+        for (String claimName : claimExpression.split("\\|")) {
+            String normalizedClaim = claimName.trim();
+            if (normalizedClaim.isEmpty()) {
+                continue;
+            }
+            JsonNode claim = tokenPayload.get().get(normalizedClaim);
+            Optional<String> value = jsonValue(claim);
+            if (value.isPresent()) {
+                return value;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<String> bearerToken(
+        ProxyRequestContext request,
+        Map<String, List<String>> outboundHeaders) {
+        return firstHeaderValue(request.header("authorization"), outboundHeaders, "authorization")
+            .map(value -> {
+                String trimmed = value.trim();
+                if (trimmed.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {
+                    return trimmed.substring("Bearer ".length()).trim();
+                }
+                return trimmed;
+            })
+            .filter(value -> !value.isBlank());
+    }
+
+    private Optional<JsonNode> decodeJwtPayload(String token) {
+        String[] parts = token.split("\\.");
+        if (parts.length < 2) {
+            return Optional.empty();
+        }
+        try {
+            byte[] decoded = Base64.getUrlDecoder().decode(parts[1]);
+            return Optional.of(OBJECT_MAPPER.readTree(new String(decoded, StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            log.debug("Unable to decode JWT payload for history additional property extraction", e);
+            return Optional.empty();
+        }
+    }
+
+    private Optional<String> jsonValue(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return Optional.empty();
+        }
+        if (node.isTextual()) {
+            return Optional.of(node.asText()).filter(value -> !value.isBlank());
+        }
+        if (node.isNumber() || node.isBoolean()) {
+            return Optional.of(node.asText());
+        }
+        if (node.isArray()) {
+            List<String> values = java.util.stream.StreamSupport.stream(node.spliterator(), false)
+                .flatMap(value -> jsonValue(value).stream())
+                .toList();
+            return values.isEmpty() ? Optional.empty() : Optional.of(String.join(",", values));
+        }
+        return Optional.of(node.toString());
+    }
+
+    private EffectiveHistoryConfig effectiveConfig(ProxyProperties.BackendDefinition backend) {
+        ProxyProperties.HistoryConfig global = proxyProperties.history();
+        Optional<ProxyProperties.BackendHistoryConfig> backendConfig = backend.history();
+        return new EffectiveHistoryConfig(
+            backendConfig.flatMap(ProxyProperties.BackendHistoryConfig::provider).orElse(global.provider()),
+            backendConfig.flatMap(ProxyProperties.BackendHistoryConfig::deliveryMode).orElse(global.deliveryMode()),
+            backendConfig.flatMap(ProxyProperties.BackendHistoryConfig::failOpen).orElse(global.failOpen()),
+            backendConfig.flatMap(ProxyProperties.BackendHistoryConfig::serviceUrl).orElse(global.serviceUrl()),
+            backendConfig.flatMap(ProxyProperties.BackendHistoryConfig::projectId).or(global::projectId),
+            backendConfig.flatMap(ProxyProperties.BackendHistoryConfig::topic).or(global::topic),
+            global.timeout(),
+            global.tlsProfile()
+        );
+    }
+
+    void onShutdown(@Observes ShutdownEvent event) {
+        executor.shutdown();
+    }
+
+    private record EffectiveHistoryConfig(
+        String provider,
+        String deliveryMode,
+        boolean failOpen,
+        String serviceUrl,
+        Optional<String> projectId,
+        Optional<String> topic,
+        java.time.Duration timeout,
+        Optional<String> tlsProfile
+    ) {
+        boolean confirmed() {
+            return "confirmed".equalsIgnoreCase(deliveryMode);
+        }
+    }
+}

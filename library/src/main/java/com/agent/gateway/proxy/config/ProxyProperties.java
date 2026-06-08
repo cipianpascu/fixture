@@ -19,6 +19,9 @@ public interface ProxyProperties {
     
     @WithName("tls")
     Optional<TlsConfig> tls();
+
+    @WithName("history")
+    HistoryConfig history();
     
     @WithName("backends")
     List<BackendDefinition> backends();
@@ -139,6 +142,8 @@ public interface ProxyProperties {
         @WithName("authz-request")
         Optional<AuthzRequestConfig> authzRequest();
 
+        Optional<BackendHistoryConfig> history();
+
         @WithName("tls-profile")
         Optional<String> tlsProfile();
 
@@ -163,6 +168,63 @@ public interface ProxyProperties {
         @WithName("non-proxy-hosts")
         @WithDefault("")
         List<String> nonProxyHosts();
+    }
+
+    interface HistoryConfig {
+        @WithDefault("false")
+        boolean enabled();
+
+        @WithDefault("gcp-pubsub")
+        String provider();
+
+        @WithName("delivery-mode")
+        @WithDefault("async")
+        String deliveryMode();
+
+        @WithName("fail-open")
+        @WithDefault("true")
+        boolean failOpen();
+
+        @WithDefault("POST,PUT,PATCH,DELETE")
+        List<String> methods();
+
+        @WithName("service-url")
+        @WithDefault("https://pubsub.googleapis.com")
+        String serviceUrl();
+
+        @WithName("project-id")
+        Optional<String> projectId();
+
+        Optional<String> topic();
+
+        @WithDefault("5s")
+        Duration timeout();
+
+        @WithName("tls-profile")
+        Optional<String> tlsProfile();
+    }
+
+    interface BackendHistoryConfig {
+        Optional<Boolean> enabled();
+
+        Optional<String> provider();
+
+        @WithName("delivery-mode")
+        Optional<String> deliveryMode();
+
+        @WithName("fail-open")
+        Optional<Boolean> failOpen();
+
+        @WithName("service-url")
+        Optional<String> serviceUrl();
+
+        @WithName("project-id")
+        Optional<String> projectId();
+
+        Optional<String> topic();
+
+        @WithName("additional-properties")
+        Map<String, String> additionalProperties();
     }
 
     interface TlsConfig {

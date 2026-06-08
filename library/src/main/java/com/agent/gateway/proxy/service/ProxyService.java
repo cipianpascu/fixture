@@ -7,6 +7,7 @@ import com.agent.gateway.proxy.exception.AuthenticationRequiredException;
 import com.agent.gateway.proxy.exception.AuthorizationDeniedException;
 import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import com.agent.gateway.proxy.exception.UpstreamProxyException;
+import com.agent.gateway.proxy.history.HistoryService;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.service.auth.AuthService;
 import com.agent.gateway.proxy.service.auth.AuthServiceFactory;
@@ -87,6 +88,9 @@ public class ProxyService {
     @Inject
     BackendInvocationFailureMapper failureMapper;
 
+    @Inject
+    HistoryService historyService;
+
     private final Map<String, HttpClient> httpClients = new ConcurrentHashMap<>();
     
     /**
@@ -136,6 +140,7 @@ public class ProxyService {
             String outboundRequestBody = authService.transformRequestBody(request, authHeaders, requestBody);
             headers = mergeAuthHeaders(headers, authHeaders);
             logBackendHeaders(backend, targetUrl, headers);
+            emitHistory(backend, request, requestBody, headers, outboundRequestBody);
             
             // Build HTTP request
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
@@ -196,6 +201,18 @@ public class ProxyService {
             String requestBody,
             Throwable failure) {
         return failureMapper.toResponse(backend.name(), failure, "Failed to forward request to backend '%s'");
+    }
+
+    private void emitHistory(
+        ProxyProperties.BackendDefinition backend,
+        ProxyRequestContext request,
+        String requestBody,
+        Map<String, List<String>> headers,
+        String outboundRequestBody) {
+        if (historyService == null) {
+            return;
+        }
+        historyService.emit(backend, request, requestBody, headers, outboundRequestBody);
     }
     
     /**

@@ -18,6 +18,9 @@ public class ConfiguredProxyProperties implements ProxyProperties {
     TlsConfigMapping tlsConfig;
 
     @Inject
+    HistoryConfigMapping historyConfig;
+
+    @Inject
     BackendDefinitionsConfig backendDefinitionsConfig;
 
     @Override
@@ -31,6 +34,11 @@ public class ConfiguredProxyProperties implements ProxyProperties {
     }
 
     @Override
+    public HistoryConfig history() {
+        return historyConfig;
+    }
+
+    @Override
     public List<BackendDefinition> backends() {
         return backendDefinitionsConfig.backends();
     }
@@ -41,6 +49,10 @@ public class ConfiguredProxyProperties implements ProxyProperties {
 
     @ConfigMapping(prefix = "gateway.tls")
     public interface TlsConfigMapping extends ProxyProperties.TlsConfig {
+    }
+
+    @ConfigMapping(prefix = "gateway.history")
+    public interface HistoryConfigMapping extends ProxyProperties.HistoryConfig {
     }
 
     @ConfigMapping(prefix = "gateway.backends")

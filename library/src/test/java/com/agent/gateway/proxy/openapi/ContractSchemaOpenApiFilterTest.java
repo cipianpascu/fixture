@@ -1,5 +1,6 @@
 package com.agent.gateway.proxy.openapi;
 
+import com.agent.gateway.proxy.TestHistoryConfig;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.service.SchemaLoader;
 import org.eclipse.microprofile.openapi.OASFactory;
@@ -131,6 +132,11 @@ class ContractSchemaOpenApiFilterTest {
             }
 
             @Override
+            public HistoryConfig history() {
+                return TestHistoryConfig.disabled();
+            }
+
+            @Override
             public List<BackendDefinition> backends() {
                 return List.of(backend(backendName, schemaName));
             }
@@ -187,6 +193,11 @@ class ContractSchemaOpenApiFilterTest {
             @Override
             public Map<String, String> securityConfig() {
                 return Map.of();
+            }
+
+            @Override
+            public Optional<ProxyProperties.BackendHistoryConfig> history() {
+                return Optional.empty();
             }
 
             @Override

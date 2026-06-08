@@ -1,5 +1,6 @@
 package com.agent.gateway.proxy.service;
 
+import com.agent.gateway.proxy.TestHistoryConfig;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import org.junit.jupiter.api.Test;
@@ -98,6 +99,11 @@ class TlsContextFactoryTest {
             }
 
             @Override
+            public HistoryConfig history() {
+                return TestHistoryConfig.disabled();
+            }
+
+            @Override
             public List<BackendDefinition> backends() {
                 return List.of();
             }
@@ -163,6 +169,11 @@ class TlsContextFactoryTest {
 
             @Override
             public Optional<ProxyProperties.AuthzRequestConfig> authzRequest() {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<ProxyProperties.BackendHistoryConfig> history() {
                 return Optional.empty();
             }
 

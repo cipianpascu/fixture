@@ -11,6 +11,7 @@ This module contains the reusable runtime pieces that are shared by proxy-style 
 - request context and validation models
 - schema loading and validation
 - forwarding, auth, and outbound TLS services
+- history event emission for mutating backend calls
 - OpenAPI decoration from loaded contract schemas
 - auth-service transport and auth strategy wiring
 - per-backend transport tuning such as outbound proxy and HTTP version
@@ -56,6 +57,7 @@ flowchart TD
         - per-backend HTTP version
         - per-backend proxy settings
         - TLS-aware HttpClient
+        - history emission hook
         - sanitized debug header logging]
 
         G[AuthServiceFactory
@@ -74,6 +76,11 @@ flowchart TD
         H[TlsContextFactory]
         I[ContractSchemaOpenApiFilter]
         J[ProxyProperties]
+        M[HistoryService
+        - mutating-method detection
+        - backend opt-out
+        - additional property extraction
+        - mapper and publisher SPI]
     end
 
     B --> C
@@ -82,6 +89,7 @@ flowchart TD
     D --> E
     F --> G
     F --> H
+    F --> M
     G --> K
     I --> E
     J --> C
@@ -89,9 +97,11 @@ flowchart TD
     J --> F
     J --> G
     J --> H
+    J --> M
 
     F --> K[Configured Backend]
     G --> L[Optional Auth Service]
+    M --> N[Configured History Publisher]
 ```
 
 ## Schema Contract
@@ -121,6 +131,7 @@ This means downstream applications should place all contract and backend schemas
 - forward requests to configured backends
 - preserve multi-value inbound headers during forwarding while still exposing normalized single-value accessors to resources and auth helpers
 - enrich outbound requests with auth strategies
+- emit custom history events for configured mutating backend calls
 - apply outbound truststore and mTLS configuration
 - decode gzipped upstream responses before response parsing and trimming
 - decorate generated Swagger/OpenAPI output from in-memory contract schemas
@@ -164,6 +175,29 @@ Auth failures are categorized so applications get clearer responses:
 - sanitized debug logging of outbound backend headers
 
 The auth-service caller uses the same shared transport principles, but auth-service-specific settings remain part of the shared library internals rather than per-backend application config.
+
+## History Events
+
+`HistoryService` can emit events for mutating backend calls after auth enrichment and before the backend request is sent. It is integrated into both `ProxyService` and `SoapBackendService`; custom resources that bypass those services can inject and call `HistoryService` directly.
+
+Behavior:
+
+- global `gateway.history.enabled` controls the feature
+- backend `history.enabled: false` opts out a backend
+- methods default to `POST`, `PUT`, `PATCH`, and `DELETE`
+- payloads are application-owned through `HistoryPayloadMapper`
+- publishing is provider-owned through `HistoryPublisher`; the built-in provider is `gcp-pubsub`
+- additional mapper/publisher properties can come from `literal:`, `header:`, `cookie:`, or `token:` sources
+- token claim sources can use fallback order, for example `token:partner_id|c_partner_id`
+
+Delivery behavior:
+
+| delivery-mode | fail-open | Behavior |
+| --- | --- | --- |
+| `async` | `true` | Submit publish task and continue; local submit failure is logged. |
+| `async` | `false` | Submit publish task and continue; local submit failure aborts the backend call. Pub/Sub ack is not awaited. |
+| `confirmed` | `true` | Wait for publish result; publish failure is logged and the backend call continues. |
+| `confirmed` | `false` | Wait for publish result; publish failure aborts the backend call. |
 
 ## What You Can Build On Top
 

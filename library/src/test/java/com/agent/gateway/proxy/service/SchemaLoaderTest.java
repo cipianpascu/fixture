@@ -1,6 +1,7 @@
 package com.agent.gateway.proxy.service;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
+import com.agent.gateway.proxy.TestHistoryConfig;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import org.junit.jupiter.api.Test;
 
@@ -119,6 +120,7 @@ class SchemaLoaderTest {
             (proxy, method, args) -> switch (method.getName()) {
                 case "schemas" -> schemaConfig;
                 case "auth" -> authConfig;
+                case "history" -> TestHistoryConfig.disabled();
                 case "tls" -> Optional.empty();
                 case "backends" -> List.of();
                 default -> method.getDefaultValue();

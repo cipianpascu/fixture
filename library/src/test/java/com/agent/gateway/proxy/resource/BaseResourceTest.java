@@ -1,5 +1,6 @@
 package com.agent.gateway.proxy.resource;
 
+import com.agent.gateway.proxy.TestHistoryConfig;
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.service.ProxyService;
@@ -190,6 +191,11 @@ class BaseResourceTest {
             }
 
             @Override
+            public HistoryConfig history() {
+                return TestHistoryConfig.disabled();
+            }
+
+            @Override
             public java.util.List<BackendDefinition> backends() {
                 return java.util.List.of(backend);
             }
@@ -255,6 +261,11 @@ class BaseResourceTest {
 
             @Override
             public Optional<ProxyProperties.AuthzRequestConfig> authzRequest() {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<ProxyProperties.BackendHistoryConfig> history() {
                 return Optional.empty();
             }
 

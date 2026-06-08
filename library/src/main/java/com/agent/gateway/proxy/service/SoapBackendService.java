@@ -8,6 +8,7 @@ import com.agent.gateway.proxy.exception.AuthorizationDeniedException;
 import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import com.agent.gateway.proxy.exception.SoapFaultException;
 import com.agent.gateway.proxy.exception.UpstreamProxyException;
+import com.agent.gateway.proxy.history.HistoryService;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.service.auth.AuthService;
 import com.agent.gateway.proxy.service.auth.AuthServiceFactory;
@@ -53,6 +54,9 @@ public class SoapBackendService {
 
     @Inject
     TlsContextFactory tlsContextFactory;
+
+    @Inject
+    HistoryService historyService;
 
     private final Map<String, HttpClient> httpClients = new ConcurrentHashMap<>();
     private final Map<String, JAXBContext> jaxbContexts = new ConcurrentHashMap<>();
@@ -112,6 +116,7 @@ public class SoapBackendService {
 
             headers = ProxyService.mergeAuthHeaders(headers, authHeaders);
             logBackendHeaders(backend, endpoint, headers);
+            emitHistory(backend, request, envelope, headers, outboundEnvelope);
 
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))
@@ -133,6 +138,18 @@ public class SoapBackendService {
             Thread.currentThread().interrupt();
             throw new UpstreamProxyException("Request to backend '%s' was interrupted".formatted(backend.name()), e);
         }
+    }
+
+    private void emitHistory(
+        ProxyProperties.BackendDefinition backend,
+        ProxyRequestContext request,
+        String incomingEnvelope,
+        Map<String, List<String>> headers,
+        String outboundEnvelope) {
+        if (historyService == null) {
+            return;
+        }
+        historyService.emit(backend, request, incomingEnvelope, headers, outboundEnvelope);
     }
 
     private void validateSoapBackend(ProxyProperties.BackendDefinition backend) {

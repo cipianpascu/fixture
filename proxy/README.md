@@ -10,6 +10,7 @@ Quarkus-based HTTP proxy for routing agent traffic to multiple upstream backends
 - Demonstrates application-owned orchestration resources built on top of the shared library
 - Supports outbound TLS truststores and mTLS client certificates
 - Supports Cloud Run service-to-service IAM auth for backends and for the auth service itself
+- Can emit custom history events for mutating backend calls
 - Exposes Quarkus health and Prometheus endpoints
 
 This module is file-configured only. There is no database and no admin API.
@@ -105,6 +106,54 @@ gateway:
           - SecondFunction
 ```
 
+### History Events
+
+History emission is disabled by default. When enabled, `ProxyService` and `SoapBackendService` emit events after auth/security enrichment and before the backend call for configured mutating methods.
+
+```yaml
+gateway:
+  history:
+    enabled: true
+    provider: gcp-pubsub
+    delivery-mode: async
+    fail-open: true
+    methods: [POST, PUT, PATCH, DELETE]
+    project-id: ${GCP_PROJECT_ID}
+    topic: backend-history
+
+  backends:
+    - name: orders
+      baseUrl: https://orders.example.com
+      path: /api
+      schema: orders.yaml
+      securityType: jwt
+      history:
+        additional-properties:
+          source: literal:bfa
+          traceId: header:X-Trace-Id
+          sessionId: cookie:SESSION
+          customerId: token:partner_id|c_partner_id
+
+    - name: read-only
+      baseUrl: https://readonly.example.com
+      path: /api
+      schema: readonly.yaml
+      securityType: none
+      history:
+        enabled: false
+```
+
+Applications provide the event body by implementing `HistoryPayloadMapper`. The mapper receives `HistoryRequestContext`, including the backend, incoming request, inbound/outbound body, outbound headers, and resolved `additionalProperties`.
+
+Delivery behavior:
+
+| delivery-mode | fail-open | Behavior |
+| --- | --- | --- |
+| `async` | `true` | Submit publish task and continue; local submit failure is logged. |
+| `async` | `false` | Submit publish task and continue; local submit failure aborts the backend call. Pub/Sub ack is not awaited. |
+| `confirmed` | `true` | Wait for publish result; publish failure is logged and the backend call continues. |
+| `confirmed` | `false` | Wait for publish result; publish failure aborts the backend call. |
+
 ### Backend Fields
 
 - `name`: backend identifier used in `/api/v1/{name}/...`
@@ -117,6 +166,7 @@ gateway:
 - `securityType`: `none`, `basic`, `jwt`, `form`, or `cloudrun`
 - `securityConfig`: auth-specific key/value config
 - `auth-request`: structured request payload sent to the selected auth service for `jwt`
+- `history`: optional per-backend history overrides and additional property extraction
 - `tls-profile`: optional outbound TLS profile name
 - `proxy`: optional outbound HTTP proxy for this backend only
 
