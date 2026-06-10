@@ -5,23 +5,30 @@ import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
 import java.security.KeyStore;
-import java.util.Map;
+import java.security.PrivateKey;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.util.Base64;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
 public class TlsContextFactory {
 
-    private final Map<String, SSLContext> sslContexts = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, SSLContext> sslContexts = new ConcurrentHashMap<>();
 
     @Inject
     ProxyProperties proxyProperties;
@@ -42,23 +49,45 @@ public class TlsContextFactory {
         ProxyProperties.TlsProfile profile = resolveProfile(profileName);
 
         try {
-            KeyManagerFactory keyManagerFactory = profile.keystore()
-                .map(this::buildKeyManagerFactory)
+            KeyManager[] keyManagers = profile.keystore()
+                .map(this::createKeyManagers)
                 .orElse(null);
-            TrustManagerFactory trustManagerFactory = profile.truststore()
-                .map(this::buildTrustManagerFactory)
+            TrustManager[] trustManagers = profile.truststore()
+                .map(this::createTrustManagers)
                 .orElse(null);
 
             SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(
-                keyManagerFactory != null ? keyManagerFactory.getKeyManagers() : null,
-                trustManagerFactory != null ? trustManagerFactory.getTrustManagers() : null,
-                null
-            );
+            sslContext.init(keyManagers, trustManagers, null);
             return sslContext;
-        } catch (GeneralSecurityException e) {
+        } catch (Exception e) {
             throw new ProxyConfigurationException(
                 "Failed to initialize TLS profile '%s'".formatted(profileName), e);
+        }
+    }
+
+    private KeyManager[] createKeyManagers(ProxyProperties.StoreConfig storeConfig) {
+        try {
+            KeyStore keyStore = loadKeyStore(storeConfig);
+            String keyPassword = storeConfig.keyPassword()
+                .orElseGet(() -> storeConfig.password().orElse(""));
+            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            kmf.init(keyStore, keyPassword.toCharArray());
+            return kmf.getKeyManagers();
+        } catch (Exception e) {
+            throw new ProxyConfigurationException(
+                "Failed to initialize key managers for '%s'".formatted(storeConfig.path()), e);
+        }
+    }
+
+    private TrustManager[] createTrustManagers(ProxyProperties.StoreConfig storeConfig) {
+        try {
+            KeyStore trustStore = loadTrustStore(storeConfig);
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            tmf.init(trustStore);
+            return tmf.getTrustManagers();
+        } catch (Exception e) {
+            throw new ProxyConfigurationException(
+                "Failed to initialize trust managers for '%s'".formatted(storeConfig.path()), e);
         }
     }
 
@@ -70,47 +99,162 @@ public class TlsContextFactory {
                 "TLS profile '%s' is not configured".formatted(profileName)));
     }
 
-    private KeyManagerFactory buildKeyManagerFactory(ProxyProperties.StoreConfig storeConfig) {
+    private KeyStore loadTrustStore(ProxyProperties.StoreConfig storeConfig) {
+        String path = storeConfig.path();
+        String type = storeConfig.type();
+
         try {
-            KeyStore keyStore = loadKeyStore(storeConfig);
-            KeyManagerFactory keyManagerFactory =
-                KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-            keyManagerFactory.init(
-                keyStore,
-                storeConfig.keyPassword().orElseGet(() -> storeConfig.password().orElse("")).toCharArray()
-            );
-            return keyManagerFactory;
-        } catch (GeneralSecurityException e) {
+            if (isPemType(type)) {
+                return loadPemTrustStore(path);
+            } else if (isPkcs12Type(type)) {
+                String password = storeConfig.password().orElse("");
+                return loadPkcs12Store(path, password);
+            } else {
+                String password = storeConfig.password().orElse("");
+                return loadJksStore(path, password, type);
+            }
+        } catch (IOException e) {
             throw new ProxyConfigurationException(
-                "Failed to initialize key managers for keystore '%s'".formatted(storeConfig.path()), e);
+                "Failed to read truststore '%s'".formatted(path), e);
+        } catch (Exception e) {
+            throw new ProxyConfigurationException(
+                "Failed to load truststore '%s'".formatted(path), e);
         }
     }
 
-    private TrustManagerFactory buildTrustManagerFactory(ProxyProperties.StoreConfig storeConfig) {
-        try {
-            KeyStore trustStore = loadKeyStore(storeConfig);
-            TrustManagerFactory trustManagerFactory =
-                TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            trustManagerFactory.init(trustStore);
-            return trustManagerFactory;
-        } catch (GeneralSecurityException e) {
-            throw new ProxyConfigurationException(
-                "Failed to initialize trust managers for truststore '%s'".formatted(storeConfig.path()), e);
+    private KeyStore loadPemTrustStore(String path) throws Exception {
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        keyStore.load(null, null);
+
+        try (InputStream is = Files.newInputStream(Path.of(path))) {
+            int count = 0;
+            while (is.available() > 0) {
+                Certificate cert = cf.generateCertificate(is);
+                keyStore.setCertificateEntry("cert-" + count++, cert);
+            }
         }
+        return keyStore;
+    }
+
+    private KeyStore loadPkcs12Store(String path, String password) throws Exception {
+        KeyStore keyStore = KeyStore.getInstance("PKCS12");
+        try (InputStream is = Files.newInputStream(Path.of(path))) {
+            keyStore.load(is, password.toCharArray());
+        }
+        return keyStore;
+    }
+
+    private KeyStore loadJksStore(String path, String password, String type) throws Exception {
+        KeyStore keyStore = KeyStore.getInstance(type);
+        try (InputStream is = Files.newInputStream(Path.of(path))) {
+            keyStore.load(is, password.toCharArray());
+        }
+        return keyStore;
     }
 
     private KeyStore loadKeyStore(ProxyProperties.StoreConfig storeConfig) {
-        Path storePath = Path.of(storeConfig.path());
-        try (InputStream inputStream = Files.newInputStream(storePath)) {
-            KeyStore keyStore = KeyStore.getInstance(storeConfig.type());
-            keyStore.load(inputStream, storeConfig.password().orElse("").toCharArray());
-            return keyStore;
+        String path = storeConfig.path();
+        String type = storeConfig.type();
+
+        try {
+            if (isPemType(type)) {
+                return loadPemKeyStore(storeConfig);
+            } else if (isPkcs12Type(type)) {
+                String password = storeConfig.password().orElse("");
+                return loadPkcs12Store(path, password);
+            } else {
+                String password = storeConfig.password().orElse("");
+                return loadJksStore(path, password, type);
+            }
         } catch (IOException e) {
             throw new ProxyConfigurationException(
-                "Failed to read TLS store '%s'".formatted(storeConfig.path()), e);
-        } catch (GeneralSecurityException e) {
+                "Failed to read keystore '%s'".formatted(path), e);
+        } catch (Exception e) {
             throw new ProxyConfigurationException(
-                "Failed to load TLS store '%s'".formatted(storeConfig.path()), e);
+                "Failed to load keystore '%s'".formatted(path), e);
         }
+    }
+
+    private KeyStore loadPemKeyStore(ProxyProperties.StoreConfig storeConfig) throws Exception {
+        String certPath = storeConfig.path();
+        String keyPath = certPath.replaceAll("\\.(crt|pem)$", ".key");
+        if (!Files.exists(Path.of(keyPath))) {
+            keyPath = certPath + ".key";
+        }
+        String keyPassword = storeConfig.keyPassword().orElse("");
+
+        // Load certificate
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        Certificate cert;
+        try (InputStream is = Files.newInputStream(Path.of(certPath))) {
+            cert = cf.generateCertificate(is);
+        }
+
+        // Load private key
+        PrivateKey privateKey = loadPemPrivateKey(keyPath, keyPassword);
+
+        // Create keystore
+        KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        keyStore.load(null, null);
+        keyStore.setKeyEntry("default", privateKey, keyPassword.toCharArray(), new Certificate[]{cert});
+
+        return keyStore;
+    }
+
+    private PrivateKey loadPemPrivateKey(String keyPath, String password) throws Exception {
+        String pemContent = Files.readString(Path.of(keyPath), StandardCharsets.UTF_8);
+
+        // Extract base64 content between PEM markers
+        String base64Content = extractPemContent(pemContent, "PRIVATE KEY");
+        if (base64Content == null) {
+            throw new ProxyConfigurationException(
+                "No private key found in PEM file: " + keyPath);
+        }
+
+        byte[] keyBytes = Base64.getDecoder().decode(base64Content);
+
+        // Try PKCS#8 format first
+        try {
+            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
+            KeyFactory kf = KeyFactory.getInstance("RSA");
+            return kf.generatePrivate(spec);
+        } catch (Exception e) {
+            // If PKCS#8 fails, try other algorithms or formats
+            try {
+                KeyFactory kf = KeyFactory.getInstance("EC");
+                PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
+                return kf.generatePrivate(spec);
+            } catch (Exception e2) {
+                throw new ProxyConfigurationException(
+                    "Failed to load private key from: " + keyPath +
+                    " (only unencrypted PKCS#8 keys are supported)", e);
+            }
+        }
+    }
+
+    private String extractPemContent(String pemContent, String markerType) {
+        String beginMarker = "-----BEGIN " + markerType + "-----";
+        String endMarker = "-----END " + markerType + "-----";
+
+        int beginIndex = pemContent.indexOf(beginMarker);
+        int endIndex = pemContent.indexOf(endMarker);
+
+        if (beginIndex == -1 || endIndex == -1) {
+            return null;
+        }
+
+        // Extract content between markers, removing whitespace
+        String content = pemContent.substring(beginIndex + beginMarker.length(), endIndex);
+        return content.replaceAll("\\s+", "");
+    }
+
+
+    private boolean isPemType(String type) {
+        return "PEM".equalsIgnoreCase(type);
+    }
+
+    private boolean isPkcs12Type(String type) {
+        return "PKCS12".equalsIgnoreCase(type) || "P12".equalsIgnoreCase(type) || "PFX".equalsIgnoreCase(type);
     }
 }

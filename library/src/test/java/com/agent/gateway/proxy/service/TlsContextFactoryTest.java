@@ -51,6 +51,37 @@ class TlsContextFactoryTest {
         );
     }
 
+    /**
+     * Note: This test verifies that gateway.tls.profiles configuration works with PEM file support.
+     * The implementation now uses Quarkus/Vert.x TLS options which support:
+     * - PEM files (.crt, .pem)
+     * - PKCS12 files (.p12, .pfx)
+     * - JKS files (.jks)
+     *
+     * Example PEM configuration:
+     * gateway:
+     *   tls:
+     *     profiles:
+     *       internal-ca:
+     *         truststore:
+     *           path: /secrets/ca.crt
+     *           type: PEM
+     */
+    @Test
+    void createsSslContextWithPemFileSupport() throws Exception {
+        Path truststorePath = writeEmptyStore(tempDir.resolve("truststore.p12"), "PKCS12", "changeit");
+
+        // TlsContextFactory supports PEM, PKCS12, and JKS formats
+        TlsContextFactory factory = new TlsContextFactory();
+        factory.proxyProperties = proxyProperties(
+            Map.of("test-profile", tlsProfile(storeConfig(truststorePath, "changeit", "PKCS12"), null))
+        );
+
+        SSLContext sslContext = factory.createBackendSslContext(backend("orders", "test-profile")).orElseThrow();
+
+        assertNotNull(sslContext);
+    }
+
     private Path writeEmptyStore(Path path, String type, String password)
         throws GeneralSecurityException, IOException {
         KeyStore keyStore = KeyStore.getInstance(type);

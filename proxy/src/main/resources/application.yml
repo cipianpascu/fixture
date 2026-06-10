@@ -66,24 +66,25 @@ gateway:
     # tls-profile: internal-ca
 
   # Optional outbound TLS profiles for auth service and backend calls
+  # Supported types: PEM, PKCS12 (alias: P12, PFX), JKS
+  # The 'type' field is required to specify the certificate format
   tls:
     profiles: {}
     # profiles:
     #   internal-ca:
     #     truststore:
-    #       path: /secrets/truststore.p12
-    #       password: ${TRUSTSTORE_PASSWORD:changeit}
-    #       type: PKCS12
+    #       path: /secrets/ca.crt
+    #       type: PEM
     #   mutual-tls:
     #     truststore:
     #       path: /secrets/truststore.p12
+    #       type: PKCS12
     #       password: ${TRUSTSTORE_PASSWORD:changeit}
-    #       type: PKCS12
     #     keystore:
-    #       path: /secrets/client-keystore.p12
-    #       password: ${KEYSTORE_PASSWORD:changeit}
-    #       key-password: ${KEY_PASSWORD:${KEYSTORE_PASSWORD:changeit}}
-    #       type: PKCS12
+    #       path: /secrets/client.crt
+    #       type: PEM
+    #       # For PEM, private key is expected at /secrets/client.key
+    #       # key-password: ${KEY_PASSWORD:}  # Optional, for encrypted keys
   
   # Schema validation settings
   schemas:
