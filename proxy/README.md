@@ -133,6 +133,8 @@ gateway:
           traceId: header:X-Trace-Id
           sessionId: cookie:SESSION
           customerId: token:partner_id|c_partner_id
+          eventDate: "date: yyyy-MM-dd"
+          eventTimestamp: date:timestamp
 
     - name: read-only
       baseUrl: https://readonly.example.com
@@ -143,7 +145,7 @@ gateway:
         enabled: false
 ```
 
-Applications provide the event body by implementing `HistoryPayloadMapper`. The mapper receives `HistoryRequestContext`, including the backend, incoming request, inbound/outbound body, outbound headers, and resolved `additionalProperties`.
+Applications provide the event body by implementing `HistoryPayloadMapper`. The mapper receives `HistoryRequestContext`, including the backend, incoming request, inbound/outbound body, outbound headers, and resolved `additionalProperties`. `date:` values are generated in UTC and support `timestamp`, `epoch-second`, `iso-instant`, or Java date/time patterns.
 
 Delivery behavior:
 

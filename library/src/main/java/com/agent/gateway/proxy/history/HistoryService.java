@@ -13,6 +13,10 @@ import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.DateTimeException;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,6 +41,8 @@ public class HistoryService {
 
     @Inject
     Instance<HistoryPublisher> publishers;
+
+    Clock clock = Clock.systemUTC();
 
     private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
         Thread thread = new Thread(runnable, "bfa-history-publisher");
@@ -233,7 +239,34 @@ public class HistoryService {
         if (source.startsWith("token:")) {
             return resolveTokenClaim(source.substring("token:".length()), tokenPayload);
         }
+        if (source.startsWith("date:")) {
+            return Optional.of(resolveDate(source.substring("date:".length())));
+        }
         throw new ProxyConfigurationException("Unsupported history additional property source '%s'".formatted(source));
+    }
+
+    private String resolveDate(String format) {
+        String normalizedFormat = format == null ? "" : format.trim();
+        if (normalizedFormat.isBlank()) {
+            throw new ProxyConfigurationException("History date additional property format must not be blank");
+        }
+        if ("timestamp".equalsIgnoreCase(normalizedFormat)) {
+            return String.valueOf(clock.instant().toEpochMilli());
+        }
+        if ("epoch-second".equalsIgnoreCase(normalizedFormat) || "epoch_seconds".equalsIgnoreCase(normalizedFormat)) {
+            return String.valueOf(clock.instant().getEpochSecond());
+        }
+        if ("iso-instant".equalsIgnoreCase(normalizedFormat) || "iso_instant".equalsIgnoreCase(normalizedFormat)) {
+            return DateTimeFormatter.ISO_INSTANT.format(clock.instant());
+        }
+        try {
+            return DateTimeFormatter.ofPattern(normalizedFormat)
+                .withZone(ZoneOffset.UTC)
+                .format(clock.instant());
+        } catch (IllegalArgumentException | DateTimeException e) {
+            throw new ProxyConfigurationException(
+                "Unsupported history date additional property format '%s'".formatted(normalizedFormat), e);
+        }
     }
 
     private Optional<String> firstHeaderValue(

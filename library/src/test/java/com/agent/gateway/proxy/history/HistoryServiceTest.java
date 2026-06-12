@@ -9,7 +9,10 @@ import org.junit.jupiter.api.Test;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.Iterator;
 import java.util.List;
@@ -27,6 +30,7 @@ class HistoryServiceTest {
     @Test
     void resolvesAdditionalPropertiesFromLiteralHeaderCookieAndFallbackTokenClaims() {
         HistoryService service = new HistoryService();
+        service.clock = Clock.fixed(Instant.parse("2026-06-12T08:15:30.123Z"), ZoneOffset.UTC);
         ProxyRequestContext request = new ProxyRequestContext(
             "POST",
             "/api/v1/orders",
@@ -44,7 +48,10 @@ class HistoryServiceTest {
                 "traceId", "header:X-Trace-Id",
                 "session", "cookie:SESSION",
                 "customerId", "token:partner_id|c_partner_id",
-                "tenantId", "token:tenant_id"
+                "tenantId", "token:tenant_id",
+                "eventDate", "date:yyyy-MM-dd",
+                "eventTimestamp", "date:timestamp",
+                "eventInstant", "date:iso-instant"
             ),
             request,
             Map.of("x-trace-id", List.of("trace-123"))
@@ -55,6 +62,9 @@ class HistoryServiceTest {
         assertEquals("cookie-session", values.get("session"));
         assertEquals("customer-123", values.get("customerId"));
         assertEquals("tenant-77", values.get("tenantId"));
+        assertEquals("2026-06-12", values.get("eventDate"));
+        assertEquals("1781252130123", values.get("eventTimestamp"));
+        assertEquals("2026-06-12T08:15:30.123Z", values.get("eventInstant"));
     }
 
     @Test
