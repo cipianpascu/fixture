@@ -187,9 +187,10 @@ Behavior:
 - methods default to `POST`, `PUT`, `PATCH`, and `DELETE`
 - payloads are application-owned through `HistoryPayloadMapper`
 - publishing is provider-owned through `HistoryPublisher`; the built-in provider is `gcp-pubsub`
-- additional mapper/publisher properties can come from `literal:`, `header:`, `cookie:`, `token:`, or `date:` sources
+- additional mapper/publisher properties can come from `literal:`, `header:`, `cookie:`, `token:`, `date:`, or `manifest:` sources
 - token claim sources can use fallback order, for example `token:partner_id|c_partner_id`
 - date sources use UTC and support `date:timestamp`, `date:epoch-second`, `date:iso-instant`, or Java date/time patterns
+- manifest sources read classpath `META-INF/MANIFEST.MF` attributes once and cache them, for example `manifest:Implementation-Version`
 
 Delivery behavior:
 

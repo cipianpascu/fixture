@@ -31,6 +31,7 @@ class HistoryServiceTest {
     void resolvesAdditionalPropertiesFromLiteralHeaderCookieAndFallbackTokenClaims() {
         HistoryService service = new HistoryService();
         service.clock = Clock.fixed(Instant.parse("2026-06-12T08:15:30.123Z"), ZoneOffset.UTC);
+        service.manifestAttributes = Map.of("Implementation-Version", "1.2.3");
         ProxyRequestContext request = new ProxyRequestContext(
             "POST",
             "/api/v1/orders",
@@ -51,7 +52,8 @@ class HistoryServiceTest {
                 "tenantId", "token:tenant_id",
                 "eventDate", "date:yyyy-MM-dd",
                 "eventTimestamp", "date:timestamp",
-                "eventInstant", "date:iso-instant"
+                "eventInstant", "date:iso-instant",
+                "appVersion", "manifest:Implementation-Version"
             ),
             request,
             Map.of("x-trace-id", List.of("trace-123"))
@@ -65,6 +67,7 @@ class HistoryServiceTest {
         assertEquals("2026-06-12", values.get("eventDate"));
         assertEquals("1781252130123", values.get("eventTimestamp"));
         assertEquals("2026-06-12T08:15:30.123Z", values.get("eventInstant"));
+        assertEquals("1.2.3", values.get("appVersion"));
     }
 
     @Test

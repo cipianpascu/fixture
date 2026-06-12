@@ -18,6 +18,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -49,11 +50,12 @@ public class GcpPubSubHistoryPublisher implements HistoryPublisher {
 
         try {
             String payloadJson = OBJECT_MAPPER.writeValueAsString(request.payload());
+            Map<String, String> attributes = cleanAttributes(request.attributes());
             String body = OBJECT_MAPPER.writeValueAsString(Map.of(
                 "messages",
                 List.of(Map.of(
                     "data", Base64.getEncoder().encodeToString(payloadJson.getBytes(StandardCharsets.UTF_8)),
-                    "attributes", request.attributes()
+                    "attributes", attributes
                 ))
             ));
 
@@ -82,6 +84,20 @@ public class GcpPubSubHistoryPublisher implements HistoryPublisher {
             throw new UpstreamProxyException(
                 "History publish for backend '%s' was interrupted".formatted(request.backend().name()), e);
         }
+    }
+
+    static Map<String, String> cleanAttributes(Map<String, String> attributes) {
+        if (attributes == null || attributes.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> cleaned = new LinkedHashMap<>();
+        attributes.forEach((key, value) -> {
+            if (key == null || value == null) {
+                return;
+            }
+            cleaned.put(key, value);
+        });
+        return Map.copyOf(cleaned);
     }
 
     private HttpClient httpClient(Duration timeout, java.util.Optional<String> tlsProfile) {

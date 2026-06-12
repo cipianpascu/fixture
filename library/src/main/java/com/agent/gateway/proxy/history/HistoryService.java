@@ -12,6 +12,8 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.IOException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.DateTimeException;
@@ -23,6 +25,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.jar.Attributes;
+import java.util.jar.Manifest;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -43,6 +47,7 @@ public class HistoryService {
     Instance<HistoryPublisher> publishers;
 
     Clock clock = Clock.systemUTC();
+    Map<String, String> manifestAttributes;
 
     private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
         Thread thread = new Thread(runnable, "bfa-history-publisher");
@@ -242,7 +247,55 @@ public class HistoryService {
         if (source.startsWith("date:")) {
             return Optional.of(resolveDate(source.substring("date:".length())));
         }
+        if (source.startsWith("manifest:")) {
+            return resolveManifestAttribute(source.substring("manifest:".length()));
+        }
         throw new ProxyConfigurationException("Unsupported history additional property source '%s'".formatted(source));
+    }
+
+    private Optional<String> resolveManifestAttribute(String attributeName) {
+        String normalizedAttributeName = attributeName == null ? "" : attributeName.trim();
+        if (normalizedAttributeName.isBlank()) {
+            throw new ProxyConfigurationException("History manifest additional property attribute must not be blank");
+        }
+        return Optional.ofNullable(loadManifestAttributes().get(normalizedAttributeName))
+            .filter(value -> !value.isBlank());
+    }
+
+    private Map<String, String> loadManifestAttributes() {
+        if (manifestAttributes != null) {
+            return manifestAttributes;
+        }
+        synchronized (this) {
+            if (manifestAttributes != null) {
+                return manifestAttributes;
+            }
+            manifestAttributes = readManifestAttributes();
+            return manifestAttributes;
+        }
+    }
+
+    private Map<String, String> readManifestAttributes() {
+        Map<String, String> attributes = new LinkedHashMap<>();
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        if (classLoader == null) {
+            classLoader = HistoryService.class.getClassLoader();
+        }
+        try {
+            java.util.Enumeration<URL> manifests = classLoader.getResources("META-INF/MANIFEST.MF");
+            while (manifests.hasMoreElements()) {
+                URL manifestUrl = manifests.nextElement();
+                try (java.io.InputStream inputStream = manifestUrl.openStream()) {
+                    Attributes mainAttributes = new Manifest(inputStream).getMainAttributes();
+                    for (Map.Entry<Object, Object> entry : mainAttributes.entrySet()) {
+                        attributes.putIfAbsent(entry.getKey().toString(), entry.getValue().toString());
+                    }
+                }
+            }
+        } catch (IOException e) {
+            log.debug("Unable to read classpath manifests for history additional property extraction", e);
+        }
+        return Map.copyOf(attributes);
     }
 
     private String resolveDate(String format) {
