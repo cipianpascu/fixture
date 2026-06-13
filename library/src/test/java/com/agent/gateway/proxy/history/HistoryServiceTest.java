@@ -18,6 +18,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Collections;
+import java.util.concurrent.AbstractExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -145,6 +149,35 @@ class HistoryServiceTest {
         assertEquals(Map.of("customerId", "customer-123"), published.get().payload());
     }
 
+    @Test
+    void asyncFailClosedPropagatesBoundedExecutorRejection() {
+        HistoryService service = historyService(
+            historyConfig(true, "async", false, executorConfig(0, 1, 0)),
+            context -> Map.of("backend", context.backend().name()),
+            publisher(request -> {
+            })
+        );
+        service.executor = new RejectingExecutorService();
+
+        assertThrows(
+            RejectedExecutionException.class,
+            () -> service.emit(backend(Optional.empty()), request("POST"), "{}", Map.of(), "{}")
+        );
+    }
+
+    @Test
+    void asyncFailOpenSwallowsBoundedExecutorRejection() {
+        HistoryService service = historyService(
+            historyConfig(true, "async", true, executorConfig(0, 1, 0)),
+            context -> Map.of("backend", context.backend().name()),
+            publisher(request -> {
+            })
+        );
+        service.executor = new RejectingExecutorService();
+
+        service.emit(backend(Optional.empty()), request("POST"), "{}", Map.of(), "{}");
+    }
+
     private HistoryService historyService(
         ProxyProperties.HistoryConfig historyConfig,
         HistoryPayloadMapper mapper,
@@ -181,6 +214,14 @@ class HistoryServiceTest {
     }
 
     private ProxyProperties.HistoryConfig historyConfig(boolean enabled, String deliveryMode, boolean failOpen) {
+        return historyConfig(enabled, deliveryMode, failOpen, Optional.empty());
+    }
+
+    private ProxyProperties.HistoryConfig historyConfig(
+        boolean enabled,
+        String deliveryMode,
+        boolean failOpen,
+        Optional<ProxyProperties.HistoryExecutorConfig> executorConfig) {
         return new ProxyProperties.HistoryConfig() {
             @Override
             public boolean enabled() {
@@ -231,7 +272,34 @@ class HistoryServiceTest {
             public Optional<String> tlsProfile() {
                 return Optional.empty();
             }
+
+            @Override
+            public Optional<ProxyProperties.HistoryExecutorConfig> executor() {
+                return executorConfig;
+            }
         };
+    }
+
+    private Optional<ProxyProperties.HistoryExecutorConfig> executorConfig(
+        int coreThreads,
+        int maxThreads,
+        int queueCapacity) {
+        return Optional.of(new ProxyProperties.HistoryExecutorConfig() {
+            @Override
+            public int coreThreads() {
+                return coreThreads;
+            }
+
+            @Override
+            public int maxThreads() {
+                return maxThreads;
+            }
+
+            @Override
+            public int queueCapacity() {
+                return queueCapacity;
+            }
+        });
     }
 
     private ProxyProperties.BackendDefinition backend(Optional<Boolean> historyEnabled) {
@@ -428,5 +496,40 @@ class HistoryServiceTest {
         return Base64.getUrlEncoder()
             .withoutPadding()
             .encodeToString(json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static final class RejectingExecutorService extends AbstractExecutorService {
+        private boolean shutdown;
+
+        @Override
+        public void shutdown() {
+            shutdown = true;
+        }
+
+        @Override
+        public List<Runnable> shutdownNow() {
+            shutdown = true;
+            return Collections.emptyList();
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return shutdown;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            return shutdown;
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit) {
+            return shutdown;
+        }
+
+        @Override
+        public void execute(Runnable command) {
+            throw new RejectedExecutionException("queue full");
+        }
     }
 }

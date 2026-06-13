@@ -62,6 +62,11 @@ public final class TestHistoryConfig {
             public Optional<String> tlsProfile() {
                 return Optional.empty();
             }
+
+            @Override
+            public Optional<ProxyProperties.HistoryExecutorConfig> executor() {
+                return Optional.empty();
+            }
         };
     }
 }

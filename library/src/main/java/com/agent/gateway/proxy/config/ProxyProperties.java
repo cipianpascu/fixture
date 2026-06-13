@@ -202,6 +202,22 @@ public interface ProxyProperties {
 
         @WithName("tls-profile")
         Optional<String> tlsProfile();
+
+        Optional<HistoryExecutorConfig> executor();
+    }
+
+    interface HistoryExecutorConfig {
+        @WithName("core-threads")
+        @WithDefault("2")
+        int coreThreads();
+
+        @WithName("max-threads")
+        @WithDefault("8")
+        int maxThreads();
+
+        @WithName("queue-capacity")
+        @WithDefault("1000")
+        int queueCapacity();
     }
 
     interface BackendHistoryConfig {

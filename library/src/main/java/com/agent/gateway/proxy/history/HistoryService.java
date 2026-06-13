@@ -27,9 +27,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
 @Slf4j
@@ -48,12 +52,13 @@ public class HistoryService {
 
     Clock clock = Clock.systemUTC();
     Map<String, String> manifestAttributes;
+    ExecutorService executor;
 
-    private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
+    private final ThreadFactory threadFactory = runnable -> {
         Thread thread = new Thread(runnable, "bfa-history-publisher");
         thread.setDaemon(true);
         return thread;
-    });
+    };
 
     public void emit(
         ProxyProperties.BackendDefinition backend,
@@ -200,7 +205,7 @@ public class HistoryService {
         }
 
         try {
-            executor.execute(publishTask);
+            executor().execute(publishTask);
         } catch (RejectedExecutionException e) {
             if (config.failOpen()) {
                 log.warn(
@@ -212,6 +217,67 @@ public class HistoryService {
             }
             throw e;
         }
+    }
+
+    private ExecutorService executor() {
+        if (executor != null) {
+            return executor;
+        }
+        synchronized (this) {
+            if (executor != null) {
+                return executor;
+            }
+            executor = buildExecutor(proxyProperties.history().executor());
+            return executor;
+        }
+    }
+
+    private ExecutorService buildExecutor(Optional<ProxyProperties.HistoryExecutorConfig> configuredExecutor) {
+        ProxyProperties.HistoryExecutorConfig config = configuredExecutor.orElse(defaultExecutorConfig());
+        int coreThreads = config.coreThreads();
+        int maxThreads = config.maxThreads();
+        int queueCapacity = config.queueCapacity();
+        if (coreThreads < 0) {
+            throw new ProxyConfigurationException("gateway.history.executor.core-threads must be >= 0");
+        }
+        if (maxThreads < 1) {
+            throw new ProxyConfigurationException("gateway.history.executor.max-threads must be >= 1");
+        }
+        if (coreThreads > maxThreads) {
+            throw new ProxyConfigurationException(
+                "gateway.history.executor.core-threads must be <= max-threads");
+        }
+        if (queueCapacity < 0) {
+            throw new ProxyConfigurationException("gateway.history.executor.queue-capacity must be >= 0");
+        }
+        return new ThreadPoolExecutor(
+            coreThreads,
+            maxThreads,
+            30,
+            TimeUnit.SECONDS,
+            queueCapacity == 0 ? new SynchronousQueue<>() : new ArrayBlockingQueue<>(queueCapacity),
+            threadFactory,
+            new ThreadPoolExecutor.AbortPolicy()
+        );
+    }
+
+    private ProxyProperties.HistoryExecutorConfig defaultExecutorConfig() {
+        return new ProxyProperties.HistoryExecutorConfig() {
+            @Override
+            public int coreThreads() {
+                return 2;
+            }
+
+            @Override
+            public int maxThreads() {
+                return 8;
+            }
+
+            @Override
+            public int queueCapacity() {
+                return 1000;
+            }
+        };
     }
 
     private HistoryPublisher resolvePublisher(String provider) {
@@ -422,7 +488,9 @@ public class HistoryService {
     }
 
     void onShutdown(@Observes ShutdownEvent event) {
-        executor.shutdown();
+        if (executor != null) {
+            executor.shutdown();
+        }
     }
 
     private record EffectiveHistoryConfig(

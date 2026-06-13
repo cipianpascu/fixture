@@ -201,6 +201,8 @@ Delivery behavior:
 | `confirmed` | `true` | Wait for publish result; publish failure is logged and the backend call continues. |
 | `confirmed` | `false` | Wait for publish result; publish failure aborts the backend call. |
 
+Async delivery uses a bounded executor configured by `gateway.history.executor.core-threads`, `max-threads`, and `queue-capacity`. A full executor follows the same `fail-open` behavior as any other async submit failure.
+
 ## What You Can Build On Top
 
 Applications using this library can build:

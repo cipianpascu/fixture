@@ -120,6 +120,10 @@ gateway:
     methods: [POST, PUT, PATCH, DELETE]
     project-id: ${GCP_PROJECT_ID}
     topic: backend-history
+    executor:
+      core-threads: 2
+      max-threads: 8
+      queue-capacity: 1000
 
   backends:
     - name: orders
@@ -147,6 +151,8 @@ gateway:
 ```
 
 Applications provide the event body by implementing `HistoryPayloadMapper`. The mapper receives `HistoryRequestContext`, including the backend, incoming request, inbound/outbound body, outbound headers, and resolved `additionalProperties`. `date:` values are generated in UTC and support `timestamp`, `epoch-second`, `iso-instant`, or Java date/time patterns. `manifest:` values read classpath manifest attributes, for example `manifest:Implementation-Version`.
+
+Async delivery uses a bounded executor. `executor.queue-capacity: 0` disables queueing and applies backpressure immediately when all workers are busy.
 
 Delivery behavior:
 
