@@ -209,7 +209,8 @@ class AuthServiceFactoryTest {
                 Duration.ofSeconds(5),
                 Optional.empty(),
                 Optional.empty(),
-                Map.of()
+                Map.of(),
+                ResolvedAuthCacheConfig.disabled()
             );
         }
     }

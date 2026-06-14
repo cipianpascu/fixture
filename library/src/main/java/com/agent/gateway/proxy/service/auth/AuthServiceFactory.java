@@ -21,6 +21,9 @@ public class AuthServiceFactory {
 
     @Inject
     CloudRunIdTokenProvider cloudRunIdTokenProvider;
+
+    @Inject
+    AuthzTokenCache authzTokenCache;
     
     /**
      * Create auth service for a backend
@@ -82,7 +85,8 @@ public class AuthServiceFactory {
             backend.authzRequest().map(ignored -> authServiceCallerFactory.getConfig(authzServiceName)),
             backend.authRequest(),
             backend.authzRequest(),
-            backend.securityConfig()
+            backend.securityConfig(),
+            authzTokenCache
         );
     }
     

@@ -4,6 +4,8 @@ import com.agent.gateway.proxy.auth.AuthTokens;
 import com.agent.gateway.proxy.auth.AuthzRequest;
 import com.agent.gateway.proxy.auth.AuthzTokens;
 import com.agent.gateway.proxy.config.ProxyProperties;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.agent.gateway.proxy.exception.AuthResponseMappingException;
 import com.agent.gateway.proxy.exception.AuthServiceException;
 import com.agent.gateway.proxy.exception.AuthenticationDeniedException;
@@ -14,17 +16,22 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 /**
  * JWT Auth Service - Retrieves JWT tokens from external auth service (Quarkus)
  */
 @Slf4j
 public class JwtAuthService implements AuthService {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     
     private final Optional<AuthServiceCaller> authServiceCaller;
     private final Optional<ResolvedAuthServiceConfig> authServiceConfig;
@@ -33,6 +40,7 @@ public class JwtAuthService implements AuthService {
     private final Optional<ProxyProperties.AuthRequestConfig> authRequestConfig;
     private final Optional<ProxyProperties.AuthzRequestConfig> authzRequestConfig;
     private final Map<String, String> securityConfig;
+    private final AuthzTokenCache authzTokenCache;
     
     public JwtAuthService(
         Optional<AuthServiceCaller> authServiceCaller,
@@ -41,7 +49,8 @@ public class JwtAuthService implements AuthService {
         Optional<ResolvedAuthServiceConfig> authzServiceConfig,
         Optional<ProxyProperties.AuthRequestConfig> authRequestConfig,
         Optional<ProxyProperties.AuthzRequestConfig> authzRequestConfig,
-        Map<String, String> securityConfig) {
+        Map<String, String> securityConfig,
+        AuthzTokenCache authzTokenCache) {
         this.authServiceCaller = authServiceCaller;
         this.authServiceConfig = authServiceConfig;
         this.authzServiceCaller = authzServiceCaller;
@@ -49,10 +58,21 @@ public class JwtAuthService implements AuthService {
         this.authRequestConfig = authRequestConfig;
         this.authzRequestConfig = authzRequestConfig;
         this.securityConfig = securityConfig == null ? Map.of() : Map.copyOf(securityConfig);
+        this.authzTokenCache = authzTokenCache;
     }
     
     @Override
     public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody) {
+        enrichHeaders(null, request, headers, requestBody);
+    }
+
+    @Override
+    public void enrichHeaders(
+        ProxyProperties.BackendDefinition backend,
+        ProxyRequestContext request,
+        Map<String, String> headers,
+        String requestBody) {
+        String backendName = backend == null ? null : backend.name();
         log.debug(
             "Preparing JWT auth for auth-service={}, authz-service={}, auth sparteGvo={}, btx={}, pss={} and authz branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
             authServiceConfig.map(ResolvedAuthServiceConfig::name).orElse(null),
@@ -70,7 +90,7 @@ public class JwtAuthService implements AuthService {
             ? retrieveTokens(resolveSessionId(request, authServiceConfig, "auth"))
             : Optional.empty();
         Optional<AuthzTokens> authzTokens = authzRequestConfig.isPresent() && authzServiceConfig.map(ResolvedAuthServiceConfig::enabled).orElse(false)
-            ? retrieveAuthorizationTokens(resolveSessionId(request, authzServiceConfig, "authz"), request)
+            ? retrieveAuthorizationTokens(resolveSessionId(request, authzServiceConfig, "authz"), request, backendName)
             : Optional.empty();
 
         if (authTokens.isPresent()) {
@@ -216,17 +236,34 @@ public class JwtAuthService implements AuthService {
         }
     }
 
-    private Optional<AuthzTokens> retrieveAuthorizationTokens(String sessionId, ProxyRequestContext request) {
+    private Optional<AuthzTokens> retrieveAuthorizationTokens(
+        String sessionId,
+        ProxyRequestContext request,
+        String backendName) {
         try {
             ProxyProperties.AuthzRequestConfig config = authzRequestConfig.orElseThrow();
             AuthServiceCaller caller = authzServiceCaller.orElseThrow();
+            ResolvedAuthServiceConfig serviceConfig = authzServiceConfig.orElseThrow();
             String branchCustomerNumber = resolveBranchCustomerNumber(request)
                 .orElseThrow(() -> new AuthenticationRequiredException(
                     "Missing branchCustomerNumber for JWT authz flow"));
 
+            if (backendName != null && serviceConfig.cache().enabled() && authzTokenCache != null) {
+                Optional<AuthzTokens> cachedTokens = authzTokenCache.get(sessionId, backendName);
+                if (cachedTokens.isPresent()) {
+                    log.debug(
+                        "Using cached authz tokens for service '{}', backend '{}', sessionId '{}'",
+                        serviceConfig.name(),
+                        backendName,
+                        sessionId
+                    );
+                    return cachedTokens;
+                }
+            }
+
             log.debug(
                 "Calling authz service '{}' with sessionId: {} and branchCustomerNumber={}, gvoEntitlementsList={}, businessTransactions={}, serviceShopTransactions={}",
-                authzServiceConfig.map(ResolvedAuthServiceConfig::name).orElse("unknown"),
+                serviceConfig.name(),
                 sessionId,
                 branchCustomerNumber,
                 config.gvoEntitlementsList().orElse(null),
@@ -261,6 +298,7 @@ public class JwtAuthService implements AuthService {
                         "Authorization response did not contain any usable token");
                 }
                 log.debug("Retrieved authz tokens successfully");
+                cacheAuthorizationTokens(serviceConfig, sessionId, backendName, tokens);
                 return Optional.of(tokens);
             }
 
@@ -499,5 +537,63 @@ public class JwtAuthService implements AuthService {
 
     private String encodePathSegment(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private void cacheAuthorizationTokens(
+        ResolvedAuthServiceConfig serviceConfig,
+        String sessionId,
+        String backendName,
+        AuthzTokens tokens) {
+        if (backendName == null || !serviceConfig.cache().enabled() || authzTokenCache == null) {
+            return;
+        }
+
+        tokenExpiry(tokens)
+            .map(expiresAt -> expiresAt.minus(serviceConfig.cache().expirySkew()))
+            .ifPresentOrElse(
+                expiresAt -> authzTokenCache.put(
+                    sessionId,
+                    backendName,
+                    tokens,
+                    expiresAt,
+                    serviceConfig.cache().maxSize()
+                ),
+                () -> log.debug(
+                    "Skipping authz token cache for service '{}' and backend '{}' because no JWT exp claim was found",
+                    serviceConfig.name(),
+                    backendName
+                )
+            );
+    }
+
+    private Optional<Instant> tokenExpiry(AuthzTokens tokens) {
+        return Stream.of(
+                tokens.getAuthorizationToken(),
+                tokens.getGlueAccessToken(),
+                tokens.getCustomerAccessToken()
+            )
+            .flatMap(token -> jwtExpiry(token).stream())
+            .min(Instant::compareTo);
+    }
+
+    private Optional<Instant> jwtExpiry(String token) {
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        String[] parts = token.split("\\.");
+        if (parts.length < 2) {
+            return Optional.empty();
+        }
+        try {
+            JsonNode payload = OBJECT_MAPPER.readTree(Base64.getUrlDecoder().decode(parts[1]));
+            JsonNode exp = payload.get("exp");
+            if (exp == null || !exp.canConvertToLong()) {
+                return Optional.empty();
+            }
+            return Optional.of(Instant.ofEpochSecond(exp.asLong()));
+        } catch (Exception e) {
+            log.debug("Unable to decode JWT exp claim for authz cache", e);
+            return Optional.empty();
+        }
     }
 }

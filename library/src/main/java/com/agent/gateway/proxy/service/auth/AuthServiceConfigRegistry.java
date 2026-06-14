@@ -109,7 +109,16 @@ public class AuthServiceConfigRegistry {
             timeout,
             config.getOptionalValue(prefix + "tls-profile", String.class),
             config.getOptionalValue(prefix + "security-type", String.class),
-            Map.copyOf(securityConfig)
+            Map.copyOf(securityConfig),
+            resolveCacheConfig(prefix)
+        );
+    }
+
+    private ResolvedAuthCacheConfig resolveCacheConfig(String prefix) {
+        return new ResolvedAuthCacheConfig(
+            config.getOptionalValue(prefix + "cache.enabled", Boolean.class).orElse(false),
+            config.getOptionalValue(prefix + "cache.expiry-skew", Duration.class).orElse(Duration.ofSeconds(30)),
+            config.getOptionalValue(prefix + "cache.max-size", Integer.class).orElse(10_000)
         );
     }
 }

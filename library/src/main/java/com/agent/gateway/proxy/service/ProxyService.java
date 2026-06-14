@@ -136,7 +136,7 @@ public class ProxyService {
             // Get appropriate auth service for this backend and enrich headers
             AuthService authService = authServiceFactory.createAuthService(backend);
             Map<String, String> authHeaders = flattenHeaders(headers);
-            authService.enrichHeaders(request, authHeaders, requestBody);
+            authService.enrichHeaders(backend, request, authHeaders, requestBody);
             String outboundRequestBody = authService.transformRequestBody(request, authHeaders, requestBody);
             headers = mergeAuthHeaders(headers, authHeaders);
             logBackendHeaders(backend, targetUrl, headers);

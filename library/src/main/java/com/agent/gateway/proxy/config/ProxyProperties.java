@@ -53,6 +53,21 @@ public interface ProxyProperties {
 
         @WithName("security-config")
         Map<String, String> securityConfig();
+
+        Optional<AuthCacheConfig> cache();
+    }
+
+    interface AuthCacheConfig {
+        @WithDefault("false")
+        boolean enabled();
+
+        @WithName("expiry-skew")
+        @WithDefault("30s")
+        Duration expirySkew();
+
+        @WithName("max-size")
+        @WithDefault("10000")
+        int maxSize();
     }
     
     interface SchemaConfig {

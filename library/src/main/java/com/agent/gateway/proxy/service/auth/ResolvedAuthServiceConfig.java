@@ -13,6 +13,7 @@ public record ResolvedAuthServiceConfig(
     Duration timeout,
     Optional<String> tlsProfile,
     Optional<String> securityType,
-    Map<String, String> securityConfig
+    Map<String, String> securityConfig,
+    ResolvedAuthCacheConfig cache
 ) {
 }

@@ -46,6 +46,19 @@ Auth-capable service calls are configured separately under named `gateway.<servi
 - `gateway.auth.security-type=cloudrun`
 - `gateway.auth.security-config.audience=...`
 
+JWT authz calls can be cached per service profile:
+
+```yaml
+gateway:
+  authz:
+    cache:
+      enabled: true
+      expiry-skew: 30s
+      max-size: 10000
+```
+
+The key is `sessionId + backendName`. Expiry is the earliest returned JWT `exp` minus `expiry-skew`; responses without a usable JWT expiry are not cached.
+
 ## TLS Model
 
 `tls-profile` is transport-level configuration, not application auth.

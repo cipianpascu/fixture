@@ -106,7 +106,7 @@ public class SoapBackendService {
             applySoapHeaders(authHeaders, version, resolveSoapAction(backend, soapActionOverride));
 
             AuthService authService = authServiceFactory.createAuthService(backend);
-            authService.enrichHeaders(request, authHeaders, envelope);
+            authService.enrichHeaders(backend, request, authHeaders, envelope);
             String outboundEnvelope = authService.transformRequestBody(request, authHeaders, envelope);
             if (!envelope.equals(outboundEnvelope)) {
                 throw new ProxyConfigurationException(

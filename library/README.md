@@ -149,6 +149,7 @@ The library provides shared auth strategy wiring through `AuthServiceFactory`. S
 Notable behavior:
 
 - `jwt` supports configurable token-to-header mapping, sparse `auth-request` bodies, and optional `authz-request` follow-up calls
+- `jwt` authz calls can be cached with `gateway.<service>.cache.enabled=true`; entries are keyed by `sessionId + backendName`
 - `jwt` also preserves the legacy default header injection behavior (`X-Glue-Token`, `X-Auth-Z-Token`, `X-Customer-Access-Token`) when no explicit bearer or token-header mapping is configured
 - `jwt` supports auth-request path overrides and authz-request path configuration, including absolute URLs
 - `form` supports both `auth-service` and `inline` modes
@@ -162,6 +163,8 @@ Auth failures are categorized so applications get clearer responses:
 - proxy or auth configuration errors can return `500`
 - open circuit breakers can return `503`
 - broken or unavailable upstream or auth dependencies can return `502`
+
+Authz cache entries expire at the earliest returned JWT `exp` minus `expiry-skew` and are skipped when no token expiry is available. Enable this only when the configured backend represents a stable authz scope group for the session.
 
 ## Transport Behavior
 
