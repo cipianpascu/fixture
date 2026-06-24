@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.security.KeyFactory;
 import java.security.KeyStore;
 import java.security.PrivateKey;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.spec.PKCS8EncodedKeySpec;
@@ -56,12 +57,20 @@ public class TlsContextFactory {
                 .map(this::createTrustManagers)
                 .orElse(null);
 
-            SSLContext sslContext = SSLContext.getInstance("TLS");
+            SSLContext sslContext = strongestTlsContext();
             sslContext.init(keyManagers, trustManagers, null);
             return sslContext;
         } catch (Exception e) {
             throw new ProxyConfigurationException(
                 "Failed to initialize TLS profile '%s'".formatted(profileName), e);
+        }
+    }
+
+    private SSLContext strongestTlsContext() throws NoSuchAlgorithmException {
+        try {
+            return SSLContext.getInstance("TLSv1.3");
+        } catch (NoSuchAlgorithmException e) {
+            return SSLContext.getInstance("TLSv1.2");
         }
     }
 

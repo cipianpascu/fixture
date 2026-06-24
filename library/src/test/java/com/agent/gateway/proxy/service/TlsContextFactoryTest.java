@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TlsContextFactoryTest {
@@ -38,6 +39,23 @@ class TlsContextFactoryTest {
         SSLContext sslContext = factory.createBackendSslContext(backend("orders", "internal-ca")).orElseThrow();
 
         assertNotNull(sslContext);
+    }
+
+    @Test
+    void createsSslContextWithExplicitStrongProtocol() throws Exception {
+        Path truststorePath = writeEmptyStore(tempDir.resolve("truststore.p12"), "PKCS12", "changeit");
+
+        TlsContextFactory factory = new TlsContextFactory();
+        factory.proxyProperties = proxyProperties(
+            Map.of("internal-ca", tlsProfile(storeConfig(truststorePath, "changeit", "PKCS12"), null))
+        );
+
+        SSLContext sslContext = factory.createBackendSslContext(backend("orders", "internal-ca")).orElseThrow();
+
+        assertTrue(
+            List.of("TLSv1.3", "TLSv1.2").contains(sslContext.getProtocol()),
+            () -> "Unexpected TLS protocol: " + sslContext.getProtocol()
+        );
     }
 
     @Test

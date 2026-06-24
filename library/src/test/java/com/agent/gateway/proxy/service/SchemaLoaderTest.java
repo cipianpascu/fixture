@@ -6,6 +6,7 @@ import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.URL;
 import java.nio.file.Files;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -77,6 +79,17 @@ class SchemaLoaderTest {
 
         assertFalse(documentationSchemas.isEmpty());
         assertNotNull(documentationSchemas.get("self-contained-openapi31.json"));
+    }
+
+    @Test
+    void sanitizesCrLfForLogOutput() throws Exception {
+        SchemaLoader schemaLoader = new SchemaLoader();
+        Method sanitizer = SchemaLoader.class.getDeclaredMethod("sanitizeForLog", String.class);
+        sanitizer.setAccessible(true);
+
+        String sanitized = (String) sanitizer.invoke(schemaLoader, "schema.yaml\r\nforged=true");
+
+        assertEquals("schema.yaml__forged=true", sanitized);
     }
 
     private void injectProxyProperties(SchemaLoader schemaLoader, ProxyProperties proxyProperties) throws Exception {

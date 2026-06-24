@@ -77,7 +77,7 @@ public class SchemaLoader {
 
     private void loadSchemasInternal() {
         String schemaDirectory = proxyProperties.schemas().directory();
-        log.info("Loading schemas from: {}", schemaDirectory);
+        log.info("Loading schemas from: {}", sanitizeForLog(schemaDirectory));
 
         try {
             Set<String> schemaFiles = new LinkedHashSet<>(discoverSchemaFiles(schemaDirectory));
@@ -88,7 +88,7 @@ public class SchemaLoader {
                 .collect(Collectors.toSet()));
 
             if (schemaFiles.isEmpty()) {
-                log.info("No schemas discovered under {}", schemaDirectory);
+                log.info("No schemas discovered under {}", sanitizeForLog(schemaDirectory));
                 return;
             }
 
@@ -97,15 +97,19 @@ public class SchemaLoader {
                 if (schemaUrl.isPresent()) {
                     loadSchema(filename, schemaUrl.get());
                 } else {
-                    log.error("Configured schema '{}' could not be resolved from {}", filename, schemaDirectory);
+                    log.error(
+                        "Configured schema '{}' could not be resolved from {}",
+                        sanitizeForLog(filename),
+                        sanitizeForLog(schemaDirectory)
+                    );
                 }
             }
             
             log.info("Loaded {} schemas successfully", schemas.size());
-            schemas.keySet().forEach(name -> log.info("  - {}", name));
+            schemas.keySet().forEach(name -> log.info("  - {}", sanitizeForLog(name)));
             
         } catch (Exception e) {
-            log.error("Failed to load schemas from: {}", schemaDirectory, e);
+            log.error("Failed to load schemas from: {}", sanitizeForLog(schemaDirectory), e);
             throw new IllegalStateException("Failed to load schemas from " + schemaDirectory, e);
         }
     }
@@ -139,7 +143,12 @@ public class SchemaLoader {
                 return Optional.of(schemaPath.toUri().toURL());
             }
         } catch (Exception e) {
-            log.error("Failed to resolve schema '{}' from {}", filename, schemaDirectory, e);
+            log.error(
+                "Failed to resolve schema '{}' from {}",
+                sanitizeForLog(filename),
+                sanitizeForLog(schemaDirectory),
+                e
+            );
         }
 
         return Optional.empty();
@@ -208,7 +217,7 @@ public class SchemaLoader {
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to enumerate schema files from {}", schemaDirectory, e);
+            log.warn("Failed to enumerate schema files from {}", sanitizeForLog(schemaDirectory), e);
         }
 
         return filenames;
@@ -217,6 +226,15 @@ public class SchemaLoader {
     private boolean isSchemaFile(String filename) {
         String lowerCase = filename.toLowerCase(Locale.ROOT);
         return lowerCase.endsWith(".yaml") || lowerCase.endsWith(".yml") || lowerCase.endsWith(".json");
+    }
+
+    private String sanitizeForLog(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value
+            .replace('\r', '_')
+            .replace('\n', '_');
     }
     
     private void loadSchema(String filename, URL schemaUrl) {
