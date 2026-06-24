@@ -76,7 +76,10 @@ public class HistoryService {
                 .map(ProxyProperties.BackendHistoryConfig::additionalProperties)
                 .orElse(Map.of()),
             request,
-            outboundHeaders
+            outboundHeaders,
+            backend.history()
+                .flatMap(ProxyProperties.BackendHistoryConfig::tokenHeader)
+                .orElse("authorization")
         );
         HistoryRequestContext context = new HistoryRequestContext(
             backend,
@@ -112,13 +115,21 @@ public class HistoryService {
         Map<String, String> configuredProperties,
         ProxyRequestContext request,
         Map<String, List<String>> outboundHeaders) {
+        return resolveAdditionalProperties(configuredProperties, request, outboundHeaders, "authorization");
+    }
+
+    public Map<String, String> resolveAdditionalProperties(
+        Map<String, String> configuredProperties,
+        ProxyRequestContext request,
+        Map<String, List<String>> outboundHeaders,
+        String tokenHeader) {
         if (configuredProperties == null || configuredProperties.isEmpty()) {
             return Map.of();
         }
 
         Map<String, String> resolved = new LinkedHashMap<>();
         Optional<JsonNode> tokenPayload = requiresTokenPayload(configuredProperties)
-            ? bearerToken(request, outboundHeaders).flatMap(this::decodeJwtPayload)
+            ? tokenFromHeader(tokenHeader, request, outboundHeaders).flatMap(this::decodeJwtPayload)
             : Optional.empty();
         configuredProperties.forEach((name, source) -> resolveAdditionalProperty(
                 source,
@@ -425,10 +436,14 @@ public class HistoryService {
         return Optional.empty();
     }
 
-    private Optional<String> bearerToken(
+    private Optional<String> tokenFromHeader(
+        String headerName,
         ProxyRequestContext request,
         Map<String, List<String>> outboundHeaders) {
-        return firstHeaderValue(request.header("authorization"), outboundHeaders, "authorization")
+        String resolvedHeaderName = headerName == null || headerName.isBlank()
+            ? "authorization"
+            : headerName;
+        return firstHeaderValue(request.header(resolvedHeaderName), outboundHeaders, resolvedHeaderName)
             .map(value -> {
                 String trimmed = value.trim();
                 if (trimmed.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {

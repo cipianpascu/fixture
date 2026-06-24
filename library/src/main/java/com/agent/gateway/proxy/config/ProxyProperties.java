@@ -254,6 +254,9 @@ public interface ProxyProperties {
 
         Optional<String> topic();
 
+        @WithName("token-header")
+        Optional<String> tokenHeader();
+
         @WithName("additional-properties")
         Map<String, String> additionalProperties();
     }

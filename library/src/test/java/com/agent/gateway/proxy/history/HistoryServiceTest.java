@@ -75,6 +75,30 @@ class HistoryServiceTest {
     }
 
     @Test
+    void resolvesTokenClaimsFromConfiguredTokenHeader() {
+        HistoryService service = new HistoryService();
+        ProxyRequestContext request = new ProxyRequestContext(
+            "POST",
+            "/api/v1/orders",
+            null,
+            Map.of(
+                "authorization", List.of("Bearer " + jwt(Map.of("customer_id", "wrong-customer"))),
+                "x-history-token", List.of("Bearer " + jwt(Map.of("customer_id", "history-customer")))
+            ),
+            Map.of()
+        );
+
+        Map<String, String> values = service.resolveAdditionalProperties(
+            Map.of("customerId", "token:customer_id"),
+            request,
+            Map.of(),
+            "X-History-Token"
+        );
+
+        assertEquals("history-customer", values.get("customerId"));
+    }
+
+    @Test
     void confirmedFailClosedPropagatesPublishFailureBeforeBackendCall() {
         HistoryService service = historyService(
             historyConfig(true, "confirmed", false),
@@ -408,6 +432,11 @@ class HistoryServiceTest {
 
                     @Override
                     public Optional<String> topic() {
+                        return Optional.empty();
+                    }
+
+                    @Override
+                    public Optional<String> tokenHeader() {
                         return Optional.empty();
                     }
 
