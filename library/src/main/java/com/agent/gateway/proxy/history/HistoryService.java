@@ -443,7 +443,8 @@ public class HistoryService {
         String resolvedHeaderName = headerName == null || headerName.isBlank()
             ? "authorization"
             : headerName;
-        return firstHeaderValue(request.header(resolvedHeaderName), outboundHeaders, resolvedHeaderName)
+        return firstOutboundHeaderValue(outboundHeaders, resolvedHeaderName)
+            .or(() -> Optional.ofNullable(request.header(resolvedHeaderName)))
             .map(value -> {
                 String trimmed = value.trim();
                 if (trimmed.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {
@@ -452,6 +453,19 @@ public class HistoryService {
                 return trimmed;
             })
             .filter(value -> !value.isBlank());
+    }
+
+    private Optional<String> firstOutboundHeaderValue(
+        Map<String, List<String>> outboundHeaders,
+        String headerName) {
+        if (outboundHeaders == null || headerName == null) {
+            return Optional.empty();
+        }
+        List<String> values = outboundHeaders.get(headerName.toLowerCase(Locale.ROOT));
+        if (values == null || values.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(values.getFirst()).filter(value -> !value.isBlank());
     }
 
     private Optional<JsonNode> decodeJwtPayload(String token) {

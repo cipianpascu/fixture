@@ -99,6 +99,26 @@ class HistoryServiceTest {
     }
 
     @Test
+    void tokenClaimsPreferOutboundHeaderOverIncomingCloudRunToken() {
+        HistoryService service = new HistoryService();
+        ProxyRequestContext request = new ProxyRequestContext(
+            "POST",
+            "/api/v1/orders",
+            null,
+            Map.of("authorization", List.of("Bearer " + jwt(Map.of("customer_id", "cloudrun-caller")))),
+            Map.of()
+        );
+
+        Map<String, String> values = service.resolveAdditionalProperties(
+            Map.of("customerId", "token:customer_id"),
+            request,
+            Map.of("authorization", List.of("Bearer " + jwt(Map.of("customer_id", "backend-token"))))
+        );
+
+        assertEquals("backend-token", values.get("customerId"));
+    }
+
+    @Test
     void confirmedFailClosedPropagatesPublishFailureBeforeBackendCall() {
         HistoryService service = historyService(
             historyConfig(true, "confirmed", false),
