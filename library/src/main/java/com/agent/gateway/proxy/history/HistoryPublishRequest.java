@@ -15,6 +15,32 @@ public record HistoryPublishRequest(
     Duration timeout,
     Optional<String> tlsProfile,
     Map<String, String> attributes,
-    Object payload
+    Object payload,
+    HistoryStatus status,
+    Optional<Integer> backendStatusCode
 ) {
+    public HistoryPublishRequest(
+        ProxyProperties.BackendDefinition backend,
+        String provider,
+        String serviceUrl,
+        Optional<String> projectId,
+        Optional<String> topic,
+        Duration timeout,
+        Optional<String> tlsProfile,
+        Map<String, String> attributes,
+        Object payload) {
+        this(
+            backend,
+            provider,
+            serviceUrl,
+            projectId,
+            topic,
+            timeout,
+            tlsProfile,
+            attributes,
+            payload,
+            HistoryStatus.SUBMITTED,
+            Optional.empty()
+        );
+    }
 }

@@ -181,16 +181,19 @@ The auth-service caller uses the same shared transport principles, but auth-serv
 
 ## History Events
 
-`HistoryService` can emit events for mutating backend calls after auth enrichment and before the backend request is sent. It is integrated into both `ProxyService` and `SoapBackendService`; custom resources that bypass those services can inject and call `HistoryService` directly.
+`HistoryService` can emit events for mutating backend calls after auth enrichment and around the backend request. It is integrated into both `ProxyService` and `SoapBackendService`; custom resources that bypass those services can inject and call `HistoryService` directly.
 
 Behavior:
 
 - global `gateway.history.enabled` controls the feature
 - backend `history.enabled: false` opts out a backend
 - methods default to `POST`, `PUT`, `PATCH`, and `DELETE`
+- proxy services emit `SUBMITTED` before the backend call and `FULFILLED` or `FAILED` after the backend response
 - payloads are application-owned through `HistoryPayloadMapper`
+- publish attributes are mapper-owned through `HistoryPayloadMapper.attributes`, defaulting to resolved `additional-properties`
 - publishing is provider-owned through `HistoryPublisher`; the built-in provider is `gcp-pubsub`
 - additional mapper/publisher properties can come from `literal:`, `header:`, `cookie:`, `token:`, `date:`, or `manifest:` sources
+- additional property sources can use mixed fallback with `||`, for example `header:X-Customer-Id||token:partner_id|c_partner_id`
 - token claim sources can use fallback order, for example `token:partner_id|c_partner_id`
 - token claim sources read from backend `history.token-header`, defaulting to `Authorization`
 - date sources use UTC and support `date:timestamp`, `date:epoch-second`, `date:iso-instant`, or Java date/time patterns

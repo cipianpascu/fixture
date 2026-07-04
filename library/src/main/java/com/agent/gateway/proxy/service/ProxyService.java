@@ -8,6 +8,7 @@ import com.agent.gateway.proxy.exception.AuthorizationDeniedException;
 import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import com.agent.gateway.proxy.exception.UpstreamProxyException;
 import com.agent.gateway.proxy.history.HistoryService;
+import com.agent.gateway.proxy.history.HistoryStatus;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.service.auth.AuthService;
 import com.agent.gateway.proxy.service.auth.AuthServiceFactory;
@@ -18,7 +19,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
-import org.eclipse.microprofile.faulttolerance.exceptions.CircuitBreakerOpenException;
 
 import java.io.IOException;
 import java.io.ByteArrayInputStream;
@@ -28,6 +28,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Locale;
@@ -124,6 +125,9 @@ public class ProxyService {
             ProxyProperties.BackendDefinition backend,
             ProxyRequestContext request,
             String requestBody) {
+        Map<String, List<String>> headers = null;
+        String outboundRequestBody = null;
+        boolean submittedHistoryEmitted = false;
         
         try {
             // Build target URL
@@ -131,16 +135,27 @@ public class ProxyService {
             log.info("Forwarding {} request to: {}", request.method(), targetUrl);
             
             // Build headers
-            Map<String, List<String>> headers = buildHeaders(request);
+            headers = buildHeaders(request);
             
             // Get appropriate auth service for this backend and enrich headers
             AuthService authService = authServiceFactory.createAuthService(backend);
             Map<String, String> authHeaders = flattenHeaders(headers);
             authService.enrichHeaders(backend, request, authHeaders, requestBody);
-            String outboundRequestBody = authService.transformRequestBody(request, authHeaders, requestBody);
+            outboundRequestBody = authService.transformRequestBody(request, authHeaders, requestBody);
             headers = mergeAuthHeaders(headers, authHeaders);
             logBackendHeaders(backend, targetUrl, headers);
-            emitHistory(backend, request, requestBody, headers, outboundRequestBody);
+            emitHistory(
+                backend,
+                request,
+                requestBody,
+                headers,
+                outboundRequestBody,
+                HistoryStatus.SUBMITTED,
+                null,
+                null,
+                false
+            );
+            submittedHistoryEmitted = true;
             
             // Build HTTP request
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
@@ -166,6 +181,17 @@ public class ProxyService {
             log.info("Received response: {} from {}", response.statusCode(), targetUrl);
 
             DecodedResponse decodedResponse = decodeResponse(response);
+            emitHistory(
+                backend,
+                request,
+                requestBody,
+                headers,
+                outboundRequestBody,
+                statusFrom(response.statusCode()),
+                response.statusCode(),
+                new String(decodedResponse.body(), StandardCharsets.UTF_8),
+                true
+            );
             
             // Build JAX-RS response
             Response.ResponseBuilder responseBuilder = Response.status(response.statusCode());
@@ -188,9 +214,11 @@ public class ProxyService {
             return responseBuilder.build();
             
         } catch (IOException e) {
+            emitFailedHistoryAfterSubmission(backend, request, requestBody, headers, outboundRequestBody, submittedHistoryEmitted);
             throw new UpstreamProxyException("Failed to reach backend '%s'".formatted(backend.name()), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            emitFailedHistoryAfterSubmission(backend, request, requestBody, headers, outboundRequestBody, submittedHistoryEmitted);
             throw new UpstreamProxyException("Request to backend '%s' was interrupted".formatted(backend.name()), e);
         }
     }
@@ -208,11 +236,61 @@ public class ProxyService {
         ProxyRequestContext request,
         String requestBody,
         Map<String, List<String>> headers,
-        String outboundRequestBody) {
+        String outboundRequestBody,
+        HistoryStatus status,
+        Integer backendStatusCode,
+        String backendResponseBody,
+        boolean postBackendCall) {
         if (historyService == null) {
             return;
         }
-        historyService.emit(backend, request, requestBody, headers, outboundRequestBody);
+        try {
+            historyService.emit(
+                backend,
+                request,
+                requestBody,
+                headers,
+                outboundRequestBody,
+                status,
+                backendStatusCode,
+                backendResponseBody
+            );
+        } catch (RuntimeException e) {
+            if (postBackendCall) {
+                throw new ProxyConfigurationException(
+                    "Post-backend history emission failed for backend '%s'".formatted(backend.name()), e);
+            }
+            throw e;
+        }
+    }
+
+    private void emitFailedHistoryAfterSubmission(
+        ProxyProperties.BackendDefinition backend,
+        ProxyRequestContext request,
+        String requestBody,
+        Map<String, List<String>> headers,
+        String outboundRequestBody,
+        boolean submittedHistoryEmitted) {
+        if (!submittedHistoryEmitted) {
+            return;
+        }
+        emitHistory(
+            backend,
+            request,
+            requestBody,
+            headers,
+            outboundRequestBody,
+            HistoryStatus.FAILED,
+            null,
+            null,
+            true
+        );
+    }
+
+    private HistoryStatus statusFrom(int backendStatusCode) {
+        return backendStatusCode >= 200 && backendStatusCode < 400
+            ? HistoryStatus.FULFILLED
+            : HistoryStatus.FAILED;
     }
     
     /**

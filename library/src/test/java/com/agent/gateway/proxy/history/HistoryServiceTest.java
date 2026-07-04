@@ -24,6 +24,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.ArrayList;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -72,6 +73,46 @@ class HistoryServiceTest {
         assertEquals("1781252130123", values.get("eventTimestamp"));
         assertEquals("2026-06-12T08:15:30.123Z", values.get("eventInstant"));
         assertEquals("1.2.3", values.get("appVersion"));
+    }
+
+    @Test
+    void resolvesMixedAdditionalPropertySourcesInOrder() {
+        HistoryService service = new HistoryService();
+        ProxyRequestContext request = new ProxyRequestContext(
+            "POST",
+            "/api/v1/orders",
+            null,
+            Map.of("authorization", List.of("Bearer " + jwt(Map.of("c_partner_id", "token-customer")))),
+            Map.of()
+        );
+
+        Map<String, String> values = service.resolveAdditionalProperties(
+            Map.of("customerId", "header:X-Customer-Id||token:partner_id|c_partner_id"),
+            request,
+            Map.of("x-customer-id", List.of("header-customer"))
+        );
+
+        assertEquals("header-customer", values.get("customerId"));
+    }
+
+    @Test
+    void resolvesMixedAdditionalPropertyFallbackWhenFirstSourceIsMissing() {
+        HistoryService service = new HistoryService();
+        ProxyRequestContext request = new ProxyRequestContext(
+            "POST",
+            "/api/v1/orders",
+            null,
+            Map.of("authorization", List.of("Bearer " + jwt(Map.of("c_partner_id", "token-customer")))),
+            Map.of()
+        );
+
+        Map<String, String> values = service.resolveAdditionalProperties(
+            Map.of("customerId", "header:X-Customer-Id||token:partner_id|c_partner_id"),
+            request,
+            Map.of()
+        );
+
+        assertEquals("token-customer", values.get("customerId"));
     }
 
     @Test
@@ -130,7 +171,8 @@ class HistoryServiceTest {
 
         assertThrows(
             UpstreamProxyException.class,
-            () -> service.emit(
+            () -> emitSubmitted(
+                service,
                 backend(Optional.empty()),
                 request("POST"),
                 "{}",
@@ -150,7 +192,7 @@ class HistoryServiceTest {
             })
         );
 
-        service.emit(backend(Optional.empty()), request("POST"), "{}", Map.of(), "{}");
+        emitSubmitted(service, backend(Optional.empty()), request("POST"), "{}", Map.of(), "{}");
     }
 
     @Test
@@ -166,8 +208,8 @@ class HistoryServiceTest {
             })
         );
 
-        service.emit(backend(Optional.of(false)), request("POST"), "{}", Map.of(), "{}");
-        service.emit(backend(Optional.empty()), request("GET"), "{}", Map.of(), "{}");
+        emitSubmitted(service, backend(Optional.of(false)), request("POST"), "{}", Map.of(), "{}");
+        emitSubmitted(service, backend(Optional.empty()), request("GET"), "{}", Map.of(), "{}");
 
         assertEquals(0, mapped.get());
     }
@@ -181,7 +223,8 @@ class HistoryServiceTest {
             publisher(published::set)
         );
 
-        service.emit(
+        emitSubmitted(
+            service,
             backend(Optional.empty(), Map.of("customerId", "literal:customer-123")),
             request("PATCH"),
             "{}",
@@ -191,6 +234,95 @@ class HistoryServiceTest {
 
         assertEquals("customer-123", published.get().attributes().get("customerId"));
         assertEquals(Map.of("customerId", "customer-123"), published.get().payload());
+    }
+
+    @Test
+    void mapperCanReplaceConfiguredAttributes() {
+        AtomicReference<HistoryPublishRequest> published = new AtomicReference<>();
+        HistoryService service = historyService(
+            historyConfig(true, "confirmed", false),
+            new HistoryPayloadMapper() {
+                @Override
+                public Object map(HistoryRequestContext context) {
+                    return Map.of("backend", context.backend().name());
+                }
+
+                @Override
+                public Map<String, String> attributes(HistoryRequestContext context) {
+                    return Map.of("eventType", "ORDER_CHANGED");
+                }
+            },
+            publisher(published::set)
+        );
+
+        emitSubmitted(
+            service,
+            backend(Optional.empty(), Map.of("customerId", "literal:customer-123")),
+            request("PATCH"),
+            "{}",
+            Map.of(),
+            "{}"
+        );
+
+        assertEquals(Map.of("eventType", "ORDER_CHANGED"), published.get().attributes());
+        assertEquals(Map.of("backend", "orders"), published.get().payload());
+    }
+
+    @Test
+    void publishesLifecycleStatusToMapperAndPublisher() {
+        List<HistoryPublishRequest> published = new ArrayList<>();
+        HistoryService service = historyService(
+            historyConfig(true, "confirmed", false),
+            new HistoryPayloadMapper() {
+                @Override
+                public Object map(HistoryRequestContext context) {
+                    return Map.of(
+                        "status", context.status().name(),
+                        "backendStatusCode", context.backendStatusCode().map(String::valueOf).orElse("none"),
+                        "backendResponseBody", context.backendResponseBody() == null
+                            ? "none"
+                            : context.backendResponseBody()
+                    );
+                }
+            },
+            publisher(published::add)
+        );
+
+        service.emit(
+            backend(Optional.empty()),
+            request("PATCH"),
+            "{}",
+            Map.of(),
+            "{}",
+            HistoryStatus.SUBMITTED,
+            null,
+            null
+        );
+        service.emit(
+            backend(Optional.empty()),
+            request("PATCH"),
+            "{}",
+            Map.of(),
+            "{}",
+            HistoryStatus.FULFILLED,
+            200,
+            "{\"ok\":true}"
+        );
+
+        assertEquals(HistoryStatus.SUBMITTED, published.getFirst().status());
+        assertEquals(Optional.empty(), published.getFirst().backendStatusCode());
+        assertEquals(Map.of(
+            "status", "SUBMITTED",
+            "backendStatusCode", "none",
+            "backendResponseBody", "none"
+        ), published.getFirst().payload());
+        assertEquals(HistoryStatus.FULFILLED, published.get(1).status());
+        assertEquals(Optional.of(200), published.get(1).backendStatusCode());
+        assertEquals(Map.of(
+            "status", "FULFILLED",
+            "backendStatusCode", "200",
+            "backendResponseBody", "{\"ok\":true}"
+        ), published.get(1).payload());
     }
 
     @Test
@@ -205,7 +337,7 @@ class HistoryServiceTest {
 
         assertThrows(
             RejectedExecutionException.class,
-            () -> service.emit(backend(Optional.empty()), request("POST"), "{}", Map.of(), "{}")
+            () -> emitSubmitted(service, backend(Optional.empty()), request("POST"), "{}", Map.of(), "{}")
         );
     }
 
@@ -219,7 +351,26 @@ class HistoryServiceTest {
         );
         service.executor = new RejectingExecutorService();
 
-        service.emit(backend(Optional.empty()), request("POST"), "{}", Map.of(), "{}");
+        emitSubmitted(service, backend(Optional.empty()), request("POST"), "{}", Map.of(), "{}");
+    }
+
+    private void emitSubmitted(
+        HistoryService service,
+        ProxyProperties.BackendDefinition backend,
+        ProxyRequestContext request,
+        String incomingBody,
+        Map<String, List<String>> outboundHeaders,
+        String outboundBody) {
+        service.emit(
+            backend,
+            request,
+            incomingBody,
+            outboundHeaders,
+            outboundBody,
+            HistoryStatus.SUBMITTED,
+            null,
+            null
+        );
     }
 
     private HistoryService historyService(

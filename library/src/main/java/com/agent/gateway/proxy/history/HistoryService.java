@@ -65,7 +65,10 @@ public class HistoryService {
         ProxyRequestContext request,
         String incomingBody,
         Map<String, List<String>> outboundHeaders,
-        String outboundBody) {
+        String outboundBody,
+        HistoryStatus status,
+        Integer backendStatusCode,
+        String backendResponseBody) {
         if (!shouldEmit(backend, request)) {
             return;
         }
@@ -87,11 +90,14 @@ public class HistoryService {
             incomingBody,
             outboundHeaders == null ? Map.of() : Map.copyOf(outboundHeaders),
             outboundBody,
-            additionalProperties
+            additionalProperties,
+            status == null ? HistoryStatus.SUBMITTED : status,
+            Optional.ofNullable(backendStatusCode),
+            backendResponseBody
         );
 
-        Object payload = buildPayload(context, config);
-        if (payload == null) {
+        Optional<MappedHistoryEvent> event = buildEvent(context, config);
+        if (event.isEmpty()) {
             log.debug("No history payload mapper produced a payload for backend '{}'", backend.name());
             return;
         }
@@ -104,8 +110,10 @@ public class HistoryService {
             config.topic(),
             config.timeout(),
             config.tlsProfile(),
-            additionalProperties,
-            payload
+            event.get().attributes(),
+            event.get().payload(),
+            context.status(),
+            context.backendStatusCode()
         );
 
         publish(publishRequest, config);
@@ -143,7 +151,8 @@ public class HistoryService {
 
     private boolean requiresTokenPayload(Map<String, String> configuredProperties) {
         return configuredProperties.values().stream()
-            .anyMatch(source -> source != null && source.startsWith("token:"));
+            .anyMatch(source -> source != null && sourceParts(source).stream()
+                .anyMatch(part -> part.startsWith("token:")));
     }
 
     private boolean shouldEmit(ProxyProperties.BackendDefinition backend, ProxyRequestContext request) {
@@ -166,7 +175,7 @@ public class HistoryService {
             .anyMatch(value -> value.equals(method.toUpperCase(Locale.ROOT)));
     }
 
-    private Object buildPayload(HistoryRequestContext context, EffectiveHistoryConfig config) {
+    private Optional<MappedHistoryEvent> buildEvent(HistoryRequestContext context, EffectiveHistoryConfig config) {
         try {
             for (HistoryPayloadMapper mapper : payloadMappers) {
                 if (!mapper.supports(context.backend())) {
@@ -174,10 +183,14 @@ public class HistoryService {
                 }
                 Object payload = mapper.map(context);
                 if (payload != null) {
-                    return payload;
+                    Map<String, String> attributes = mapper.attributes(context);
+                    return Optional.of(new MappedHistoryEvent(
+                        payload,
+                        attributes == null ? Map.of() : attributes
+                    ));
                 }
             }
-            return null;
+            return Optional.empty();
         } catch (RuntimeException e) {
             if (config.failOpen()) {
                 log.warn(
@@ -185,7 +198,7 @@ public class HistoryService {
                     context.backend().name(),
                     e
                 );
-                return null;
+                return Optional.empty();
             }
             throw e;
         }
@@ -308,6 +321,32 @@ public class HistoryService {
         if (source == null || source.isBlank()) {
             return Optional.empty();
         }
+        List<String> parts = sourceParts(source);
+        if (parts.size() > 1) {
+            return parts.stream()
+                .map(part -> resolveSingleAdditionalProperty(part, request, outboundHeaders, tokenPayload))
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .findFirst();
+        }
+        return resolveSingleAdditionalProperty(source.trim(), request, outboundHeaders, tokenPayload);
+    }
+
+    private List<String> sourceParts(String source) {
+        if (source == null || source.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(source.split("\\|\\|"))
+            .map(String::trim)
+            .filter(part -> !part.isBlank())
+            .toList();
+    }
+
+    private Optional<String> resolveSingleAdditionalProperty(
+        String source,
+        ProxyRequestContext request,
+        Map<String, List<String>> outboundHeaders,
+        Optional<JsonNode> tokenPayload) {
         if (source.startsWith("literal:")) {
             return Optional.of(source.substring("literal:".length()));
         }
@@ -535,5 +574,11 @@ public class HistoryService {
         boolean confirmed() {
             return "confirmed".equalsIgnoreCase(deliveryMode);
         }
+    }
+
+    private record MappedHistoryEvent(
+        Object payload,
+        Map<String, String> attributes
+    ) {
     }
 }

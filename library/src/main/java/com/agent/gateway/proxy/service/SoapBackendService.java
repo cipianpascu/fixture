@@ -9,6 +9,7 @@ import com.agent.gateway.proxy.exception.ProxyConfigurationException;
 import com.agent.gateway.proxy.exception.SoapFaultException;
 import com.agent.gateway.proxy.exception.UpstreamProxyException;
 import com.agent.gateway.proxy.history.HistoryService;
+import com.agent.gateway.proxy.history.HistoryStatus;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.service.auth.AuthService;
 import com.agent.gateway.proxy.service.auth.AuthServiceFactory;
@@ -94,20 +95,24 @@ public class SoapBackendService {
         Class<T> responseType) {
 
         validateSoapBackend(backend);
+        Map<String, List<String>> headers = null;
+        String envelope = null;
+        String outboundEnvelope = null;
+        boolean submittedHistoryEmitted = false;
 
         try {
             String endpoint = backend.baseUrl() + backend.path();
             String version = soapVersion(backend);
             String payloadXml = marshalPayload(soapRequest, responseType);
-            String envelope = soapEnvelope(version, payloadXml);
+            envelope = soapEnvelope(version, payloadXml);
 
-            Map<String, List<String>> headers = buildHeaders(request);
+            headers = buildHeaders(request);
             Map<String, String> authHeaders = ProxyService.flattenHeaders(headers);
             applySoapHeaders(authHeaders, version, resolveSoapAction(backend, soapActionOverride));
 
             AuthService authService = authServiceFactory.createAuthService(backend);
             authService.enrichHeaders(backend, request, authHeaders, envelope);
-            String outboundEnvelope = authService.transformRequestBody(request, authHeaders, envelope);
+            outboundEnvelope = authService.transformRequestBody(request, authHeaders, envelope);
             if (!envelope.equals(outboundEnvelope)) {
                 throw new ProxyConfigurationException(
                     "SOAP backend '%s' does not support auth strategies that transform the outbound body"
@@ -116,7 +121,18 @@ public class SoapBackendService {
 
             headers = ProxyService.mergeAuthHeaders(headers, authHeaders);
             logBackendHeaders(backend, endpoint, headers);
-            emitHistory(backend, request, envelope, headers, outboundEnvelope);
+            emitHistory(
+                backend,
+                request,
+                envelope,
+                headers,
+                outboundEnvelope,
+                HistoryStatus.SUBMITTED,
+                null,
+                null,
+                false
+            );
+            submittedHistoryEmitted = true;
 
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))
@@ -131,11 +147,41 @@ public class SoapBackendService {
 
             log.info("Received SOAP response: {} from {}", response.statusCode(), endpoint);
             ProxyService.DecodedResponse decodedResponse = ProxyService.decodeResponse(response);
-            return unmarshalResponse(version, decodedResponse.body(), responseType, response.statusCode());
+            String responseBody = new String(decodedResponse.body(), StandardCharsets.UTF_8);
+            try {
+                T result = unmarshalResponse(version, decodedResponse.body(), responseType, response.statusCode());
+                emitHistory(
+                    backend,
+                    request,
+                    envelope,
+                    headers,
+                    outboundEnvelope,
+                    statusFrom(response.statusCode()),
+                    response.statusCode(),
+                    responseBody,
+                    true
+                );
+                return result;
+            } catch (RuntimeException e) {
+                emitHistory(
+                    backend,
+                    request,
+                    envelope,
+                    headers,
+                    outboundEnvelope,
+                    HistoryStatus.FAILED,
+                    response.statusCode(),
+                    responseBody,
+                    true
+                );
+                throw e;
+            }
         } catch (IOException e) {
+            emitFailedHistoryAfterSubmission(backend, request, envelope, headers, outboundEnvelope, submittedHistoryEmitted);
             throw new UpstreamProxyException("Failed to reach backend '%s'".formatted(backend.name()), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            emitFailedHistoryAfterSubmission(backend, request, envelope, headers, outboundEnvelope, submittedHistoryEmitted);
             throw new UpstreamProxyException("Request to backend '%s' was interrupted".formatted(backend.name()), e);
         }
     }
@@ -145,11 +191,61 @@ public class SoapBackendService {
         ProxyRequestContext request,
         String incomingEnvelope,
         Map<String, List<String>> headers,
-        String outboundEnvelope) {
+        String outboundEnvelope,
+        HistoryStatus status,
+        Integer backendStatusCode,
+        String backendResponseBody,
+        boolean postBackendCall) {
         if (historyService == null) {
             return;
         }
-        historyService.emit(backend, request, incomingEnvelope, headers, outboundEnvelope);
+        try {
+            historyService.emit(
+                backend,
+                request,
+                incomingEnvelope,
+                headers,
+                outboundEnvelope,
+                status,
+                backendStatusCode,
+                backendResponseBody
+            );
+        } catch (RuntimeException e) {
+            if (postBackendCall) {
+                throw new ProxyConfigurationException(
+                    "Post-backend history emission failed for backend '%s'".formatted(backend.name()), e);
+            }
+            throw e;
+        }
+    }
+
+    private void emitFailedHistoryAfterSubmission(
+        ProxyProperties.BackendDefinition backend,
+        ProxyRequestContext request,
+        String incomingEnvelope,
+        Map<String, List<String>> headers,
+        String outboundEnvelope,
+        boolean submittedHistoryEmitted) {
+        if (!submittedHistoryEmitted) {
+            return;
+        }
+        emitHistory(
+            backend,
+            request,
+            incomingEnvelope,
+            headers,
+            outboundEnvelope,
+            HistoryStatus.FAILED,
+            null,
+            null,
+            true
+        );
+    }
+
+    private HistoryStatus statusFrom(int backendStatusCode) {
+        return backendStatusCode >= 200 && backendStatusCode < 400
+            ? HistoryStatus.FULFILLED
+            : HistoryStatus.FAILED;
     }
 
     private void validateSoapBackend(ProxyProperties.BackendDefinition backend) {
