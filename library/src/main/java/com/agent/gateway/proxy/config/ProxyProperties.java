@@ -200,9 +200,6 @@ public interface ProxyProperties {
         @WithDefault("true")
         boolean failOpen();
 
-        @WithDefault("POST,PUT,PATCH,DELETE")
-        List<String> methods();
-
         @WithName("service-url")
         @WithDefault("https://pubsub.googleapis.com")
         String serviceUrl();

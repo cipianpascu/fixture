@@ -1,12 +1,13 @@
 package com.agent.gateway.proxy.history;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
+import com.agent.gateway.proxy.model.ProxyRequestContext;
 
 import java.util.Map;
 
 public interface HistoryPayloadMapper {
 
-    default boolean supports(ProxyProperties.BackendDefinition backend) {
+    default boolean supports(ProxyProperties.BackendDefinition backend, ProxyRequestContext incomingRequest) {
         return true;
     }
 

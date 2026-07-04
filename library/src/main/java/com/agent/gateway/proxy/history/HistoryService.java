@@ -165,20 +165,13 @@ public class HistoryService {
         if (!backendEnabled) {
             return false;
         }
-        String method = request.method();
-        if (method == null || method.isBlank()) {
-            return false;
-        }
-        return proxyProperties.history().methods().stream()
-            .filter(value -> value != null && !value.isBlank())
-            .map(value -> value.toUpperCase(Locale.ROOT))
-            .anyMatch(value -> value.equals(method.toUpperCase(Locale.ROOT)));
+        return true;
     }
 
     private Optional<MappedHistoryEvent> buildEvent(HistoryRequestContext context, EffectiveHistoryConfig config) {
         try {
             for (HistoryPayloadMapper mapper : payloadMappers) {
-                if (!mapper.supports(context.backend())) {
+                if (!mapper.supports(context.backend(), context.incomingRequest())) {
                     continue;
                 }
                 Object payload = mapper.map(context);

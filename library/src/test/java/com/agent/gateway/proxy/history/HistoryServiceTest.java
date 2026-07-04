@@ -163,7 +163,7 @@ class HistoryServiceTest {
     void confirmedFailClosedPropagatesPublishFailureBeforeBackendCall() {
         HistoryService service = historyService(
             historyConfig(true, "confirmed", false),
-            context -> Map.of("backend", context.backend().name()),
+            mapper(context -> Map.of("backend", context.backend().name())),
             publisher(request -> {
                 throw new UpstreamProxyException("publish failed");
             })
@@ -186,7 +186,7 @@ class HistoryServiceTest {
     void confirmedFailOpenDoesNotPropagatePublishFailure() {
         HistoryService service = historyService(
             historyConfig(true, "confirmed", true),
-            context -> Map.of("backend", context.backend().name()),
+            mapper(context -> Map.of("backend", context.backend().name())),
             publisher(request -> {
                 throw new UpstreamProxyException("publish failed");
             })
@@ -196,14 +196,17 @@ class HistoryServiceTest {
     }
 
     @Test
-    void skipsDisabledBackendAndNonMutatingMethods() {
+    void skipsDisabledBackendAndUnsupportedRequests() {
         AtomicInteger mapped = new AtomicInteger();
         HistoryService service = historyService(
             historyConfig(true, "confirmed", false),
-            context -> {
+            mapper(
+                (backend, request) -> !"GET".equals(request.method()),
+                context -> {
                 mapped.incrementAndGet();
                 return Map.of();
-            },
+                }
+            ),
             publisher(request -> {
             })
         );
@@ -219,7 +222,7 @@ class HistoryServiceTest {
         AtomicReference<HistoryPublishRequest> published = new AtomicReference<>();
         HistoryService service = historyService(
             historyConfig(true, "confirmed", false),
-            context -> Map.of("customerId", context.additionalProperties().get("customerId")),
+            mapper(context -> Map.of("customerId", context.additionalProperties().get("customerId"))),
             publisher(published::set)
         );
 
@@ -329,7 +332,7 @@ class HistoryServiceTest {
     void asyncFailClosedPropagatesBoundedExecutorRejection() {
         HistoryService service = historyService(
             historyConfig(true, "async", false, executorConfig(0, 1, 0)),
-            context -> Map.of("backend", context.backend().name()),
+            mapper(context -> Map.of("backend", context.backend().name())),
             publisher(request -> {
             })
         );
@@ -345,7 +348,7 @@ class HistoryServiceTest {
     void asyncFailOpenSwallowsBoundedExecutorRejection() {
         HistoryService service = historyService(
             historyConfig(true, "async", true, executorConfig(0, 1, 0)),
-            context -> Map.of("backend", context.backend().name()),
+            mapper(context -> Map.of("backend", context.backend().name())),
             publisher(request -> {
             })
         );
@@ -382,6 +385,28 @@ class HistoryServiceTest {
         service.payloadMappers = instance(List.of(mapper));
         service.publishers = instance(List.of(publisher));
         return service;
+    }
+
+    private HistoryPayloadMapper mapper(java.util.function.Function<HistoryRequestContext, Object> mapper) {
+        return mapper((backend, request) -> true, mapper);
+    }
+
+    private HistoryPayloadMapper mapper(
+        java.util.function.BiPredicate<ProxyProperties.BackendDefinition, ProxyRequestContext> supports,
+        java.util.function.Function<HistoryRequestContext, Object> mapper) {
+        return new HistoryPayloadMapper() {
+            @Override
+            public boolean supports(
+                ProxyProperties.BackendDefinition backend,
+                ProxyRequestContext incomingRequest) {
+                return supports.test(backend, incomingRequest);
+            }
+
+            @Override
+            public Object map(HistoryRequestContext context) {
+                return mapper.apply(context);
+            }
+        };
     }
 
     private ProxyProperties proxyProperties(ProxyProperties.HistoryConfig historyConfig) {
@@ -436,11 +461,6 @@ class HistoryServiceTest {
             @Override
             public boolean failOpen() {
                 return failOpen;
-            }
-
-            @Override
-            public List<String> methods() {
-                return List.of("POST", "PUT", "PATCH", "DELETE");
             }
 
             @Override

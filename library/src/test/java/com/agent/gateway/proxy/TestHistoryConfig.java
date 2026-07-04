@@ -3,7 +3,6 @@ package com.agent.gateway.proxy;
 import com.agent.gateway.proxy.config.ProxyProperties;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Optional;
 
 public final class TestHistoryConfig {
@@ -31,11 +30,6 @@ public final class TestHistoryConfig {
             @Override
             public boolean failOpen() {
                 return true;
-            }
-
-            @Override
-            public List<String> methods() {
-                return List.of("POST", "PUT", "PATCH", "DELETE");
             }
 
             @Override
