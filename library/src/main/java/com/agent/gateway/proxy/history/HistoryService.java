@@ -171,7 +171,7 @@ public class HistoryService {
     private Optional<MappedHistoryEvent> buildEvent(HistoryRequestContext context, EffectiveHistoryConfig config) {
         try {
             for (HistoryPayloadMapper mapper : payloadMappers) {
-                if (!mapper.supports(context.backend(), context.incomingRequest())) {
+                if (!mapper.supports(context.backend(), context.incomingRequest(), context.status())) {
                     continue;
                 }
                 Object payload = mapper.map(context);

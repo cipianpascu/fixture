@@ -187,7 +187,7 @@ Behavior:
 
 - global `gateway.history.enabled` controls the feature
 - backend `history.enabled: false` opts out a backend
-- `HistoryPayloadMapper.supports(backend, incomingRequest)` filters by backend, endpoint, or method
+- `HistoryPayloadMapper.supports(backend, incomingRequest, status)` filters by backend, endpoint, method, or lifecycle status
 - proxy services emit `SUBMITTED` before the backend call and `FULFILLED` or `FAILED` after the backend response
 - payloads are application-owned through `HistoryPayloadMapper`
 - publish attributes are mapper-owned through `HistoryPayloadMapper.attributes`, defaulting to resolved `additional-properties`

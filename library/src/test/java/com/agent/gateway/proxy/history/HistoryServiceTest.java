@@ -201,7 +201,7 @@ class HistoryServiceTest {
         HistoryService service = historyService(
             historyConfig(true, "confirmed", false),
             mapper(
-                (backend, request) -> !"GET".equals(request.method()),
+                (backend, request, status) -> !"GET".equals(request.method()),
                 context -> {
                 mapped.incrementAndGet();
                 return Map.of();
@@ -329,6 +329,48 @@ class HistoryServiceTest {
     }
 
     @Test
+    void supportsCanFilterByLifecycleStatus() {
+        List<HistoryPublishRequest> published = new ArrayList<>();
+        AtomicInteger mapped = new AtomicInteger();
+        HistoryService service = historyService(
+            historyConfig(true, "confirmed", false),
+            mapper(
+                (backend, request, status) -> status == HistoryStatus.FAILED,
+                context -> {
+                    mapped.incrementAndGet();
+                    return Map.of("status", context.status().name());
+                }
+            ),
+            publisher(published::add)
+        );
+
+        service.emit(
+            backend(Optional.empty()),
+            request("PATCH"),
+            "{}",
+            Map.of(),
+            "{}",
+            HistoryStatus.SUBMITTED,
+            null,
+            null
+        );
+        service.emit(
+            backend(Optional.empty()),
+            request("PATCH"),
+            "{}",
+            Map.of(),
+            "{}",
+            HistoryStatus.FAILED,
+            500,
+            "{\"error\":true}"
+        );
+
+        assertEquals(1, mapped.get());
+        assertEquals(HistoryStatus.FAILED, published.getFirst().status());
+        assertEquals(Map.of("status", "FAILED"), published.getFirst().payload());
+    }
+
+    @Test
     void asyncFailClosedPropagatesBoundedExecutorRejection() {
         HistoryService service = historyService(
             historyConfig(true, "async", false, executorConfig(0, 1, 0)),
@@ -388,18 +430,19 @@ class HistoryServiceTest {
     }
 
     private HistoryPayloadMapper mapper(java.util.function.Function<HistoryRequestContext, Object> mapper) {
-        return mapper((backend, request) -> true, mapper);
+        return mapper((backend, request, status) -> true, mapper);
     }
 
     private HistoryPayloadMapper mapper(
-        java.util.function.BiPredicate<ProxyProperties.BackendDefinition, ProxyRequestContext> supports,
+        SupportsPredicate supports,
         java.util.function.Function<HistoryRequestContext, Object> mapper) {
         return new HistoryPayloadMapper() {
             @Override
             public boolean supports(
                 ProxyProperties.BackendDefinition backend,
-                ProxyRequestContext incomingRequest) {
-                return supports.test(backend, incomingRequest);
+                ProxyRequestContext incomingRequest,
+                HistoryStatus status) {
+                return supports.test(backend, incomingRequest, status);
             }
 
             @Override
@@ -407,6 +450,14 @@ class HistoryServiceTest {
                 return mapper.apply(context);
             }
         };
+    }
+
+    @FunctionalInterface
+    private interface SupportsPredicate {
+        boolean test(
+            ProxyProperties.BackendDefinition backend,
+            ProxyRequestContext incomingRequest,
+            HistoryStatus status);
     }
 
     private ProxyProperties proxyProperties(ProxyProperties.HistoryConfig historyConfig) {
