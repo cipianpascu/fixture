@@ -24,6 +24,7 @@ import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Retry;
 
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.XMLConstants;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringWriter;
@@ -120,6 +121,9 @@ public class SoapBackendService {
             }
 
             headers = ProxyService.mergeAuthHeaders(headers, authHeaders);
+            if (historyService != null) {
+                historyService.enrichOutboundHeaders(backend, request, headers);
+            }
             logBackendHeaders(backend, endpoint, headers);
             emitHistory(
                 backend,
@@ -261,11 +265,7 @@ public class SoapBackendService {
     }
 
     private Map<String, List<String>> buildHeaders(ProxyRequestContext request) {
-        Map<String, List<String>> headers = new LinkedHashMap<>(request.headers());
-        headers.entrySet().removeIf(entry ->
-            ProxyService.HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT))
-                || ProxyService.NON_FORWARDED_REQUEST_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT)));
-        return headers;
+        return ProxyService.filterForwardHeaders(request.headers());
     }
 
     private void applySoapHeaders(Map<String, String> headers, String version, Optional<String> soapAction) {
@@ -325,8 +325,18 @@ public class SoapBackendService {
         try {
             DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
             documentBuilderFactory.setNamespaceAware(true);
-            org.w3c.dom.Document document = documentBuilderFactory.newDocumentBuilder()
-                .parse(new ByteArrayInputStream(body));
+            documentBuilderFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            documentBuilderFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            documentBuilderFactory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            documentBuilderFactory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            documentBuilderFactory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            documentBuilderFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            documentBuilderFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            documentBuilderFactory.setXIncludeAware(false);
+            documentBuilderFactory.setExpandEntityReferences(false);
+            javax.xml.parsers.DocumentBuilder documentBuilder = documentBuilderFactory.newDocumentBuilder();
+            documentBuilder.setErrorHandler(new org.xml.sax.helpers.DefaultHandler());
+            org.w3c.dom.Document document = documentBuilder.parse(new ByteArrayInputStream(body));
             document.getDocumentElement().normalize();
             org.w3c.dom.Element bodyElement = firstChildElementByName(
                 document.getDocumentElement(),

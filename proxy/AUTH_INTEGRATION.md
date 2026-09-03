@@ -93,11 +93,11 @@ gateway:
     timeout: 5s                         # Auth service call timeout
 ```
 
-**How it works:** 
+**How it works:**
 - The `service-url` is the base URL only (e.g., `http://localhost:8081`)
-- The path `/auth/tokens` is defined in `@Path` annotation on `AuthClient.java`
-- The REST Client is created programmatically using `RestClientBuilder` with the configured URL
-- No separate Quarkus REST Client configuration needed!
+- Concrete auth flows append their own relative paths, such as `/auth/tokens/{sessionId}`
+- The shared `AuthServiceCaller` in `bfa-library` performs the HTTP call, TLS setup, timeout handling, and optional Cloud Run auth
+- No separate Quarkus REST Client configuration is needed
 
 ### Complete Backend Examples
 ```yaml
@@ -141,28 +141,32 @@ The gateway looks for sessionId in the following order:
 
 **Request:**
 ```
-POST {service-url}
+POST {service-url}/auth/tokens/{sessionId}
 Headers:
-  X-Session-Id: <sessionId>
   Content-Type: application/json
 Body:
 {
-  "scopes": ["read:users", "write:users"]
+  "sparteGvo": ["..."],
+  "btx": ["..."],
+  "pss": ["..."]
 }
 ```
 
 **Response:**
 ```json
 {
-  "serviceToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "userGrantsToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "glue_token": "...",
+  "auth_z_token": "...",
+  "customer_access_token": "...",
+  "disallowed_pss": []
 }
 ```
 
 **Backend Request Headers:**
 ```
-X-Service-Token: <serviceToken>
-X-User-Grants-Token: <userGrantsToken>
+Authorization: Bearer <mapped token>
+X-Glue-Token: <mapped token>
+... any configured static-headers/token-headers
 ```
 
 ## Basic Authentication Details

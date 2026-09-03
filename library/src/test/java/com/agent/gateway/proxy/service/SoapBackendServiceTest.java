@@ -2,6 +2,7 @@ package com.agent.gateway.proxy.service;
 
 import com.agent.gateway.proxy.config.ProxyProperties;
 import com.agent.gateway.proxy.exception.SoapFaultException;
+import com.agent.gateway.proxy.exception.UpstreamProxyException;
 import com.agent.gateway.proxy.model.ProxyRequestContext;
 import com.agent.gateway.proxy.service.auth.AuthService;
 import com.agent.gateway.proxy.service.auth.AuthServiceFactory;
@@ -128,6 +129,40 @@ class SoapBackendServiceTest {
         );
 
         assertEquals("SOAP Fault from backend: soapenv:Server customer profile unavailable", exception.getMessage());
+    }
+
+    @Test
+    void rejectsSoapResponsesWithDoctypeDeclarations() throws Exception {
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/soap/customer-profile", exchange -> respond(
+            exchange,
+            200,
+            """
+                <!DOCTYPE soapenv:Envelope [<!ENTITY external SYSTEM "file:///not-available">]>
+                <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+                  <soapenv:Body><external/></soapenv:Body>
+                </soapenv:Envelope>
+                """
+        ));
+        server.start();
+
+        SoapBackendService service = new SoapBackendService();
+        service.authServiceFactory = noOpAuthServiceFactory();
+        service.tlsContextFactory = new TlsContextFactory();
+
+        TestSoapRequest requestBody = new TestSoapRequest();
+        requestBody.setCustomerId("321");
+
+        assertThrows(
+            UpstreamProxyException.class,
+            () -> service.invoke(
+                backend("http://127.0.0.1:" + server.getAddress().getPort(), "/soap/customer-profile"),
+                requestContext(),
+                requestBody,
+                "urn:GetCustomerProfile",
+                TestSoapResponse.class
+            )
+        );
     }
 
     private AuthServiceFactory noOpAuthServiceFactory() {

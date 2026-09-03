@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -117,6 +118,38 @@ public class HistoryService {
         );
 
         publish(publishRequest, config);
+    }
+
+    /**
+     * Adds configured request-scoped generated values to the headers forwarded upstream.
+     * Call this before the submitted history event so both lifecycle events observe the
+     * same generated value.
+     */
+    public void enrichOutboundHeaders(
+        ProxyProperties.BackendDefinition backend,
+        ProxyRequestContext request,
+        Map<String, List<String>> outboundHeaders) {
+        if (outboundHeaders == null) {
+            return;
+        }
+        Map<String, String> generatedHeaders = backend.history()
+            .map(ProxyProperties.BackendHistoryConfig::generatedHeaders)
+            .orElse(Map.of());
+        generatedHeaders.forEach((headerName, source) -> {
+            if (headerName == null || headerName.isBlank()) {
+                throw new ProxyConfigurationException("History generated header name must not be blank");
+            }
+            String normalizedHeaderName = headerName.toLowerCase(Locale.ROOT);
+            if (com.agent.gateway.proxy.service.ProxyService.isHopByHopHeader(normalizedHeaderName)) {
+                throw new ProxyConfigurationException(
+                    "History generated header '%s' must not be hop-by-hop".formatted(headerName));
+            }
+            if (firstOutboundHeaderValue(outboundHeaders, normalizedHeaderName).isPresent()) {
+                return;
+            }
+            resolveGeneratedValue(source, request).ifPresent(value ->
+                outboundHeaders.put(normalizedHeaderName, List.of(value)));
+        });
     }
 
     public Map<String, String> resolveAdditionalProperties(
@@ -359,7 +392,18 @@ public class HistoryService {
         if (source.startsWith("manifest:")) {
             return resolveManifestAttribute(source.substring("manifest:".length()));
         }
+        if (source.startsWith("generator:")) {
+            return resolveGeneratedValue(source, request);
+        }
         throw new ProxyConfigurationException("Unsupported history additional property source '%s'".formatted(source));
+    }
+
+    private Optional<String> resolveGeneratedValue(String source, ProxyRequestContext request) {
+        String generator = source == null ? "" : source.substring("generator:".length()).trim();
+        if ("uuid".equalsIgnoreCase(generator)) {
+            return Optional.of(request.generatedValue("uuid", () -> UUID.randomUUID().toString()));
+        }
+        throw new ProxyConfigurationException("Unsupported history generator '%s'".formatted(generator));
     }
 
     private Optional<String> resolveManifestAttribute(String attributeName) {

@@ -144,6 +144,18 @@ class ProxyServiceProxySelectorTest {
         assertEquals(List.of("tx-123"), merged.get("x-request-id"));
     }
 
+    @Test
+    void removesHeadersNominatedByConnection() {
+        Map<String, List<String>> forwarded = ProxyService.filterForwardHeaders(Map.of(
+            "Connection", List.of("X-Internal-Route, X-Temporary"),
+            "X-Internal-Route", List.of("admin"),
+            "x-temporary", List.of("one"),
+            "X-Request-Id", List.of("trace-123")
+        ));
+
+        assertEquals(Map.of("X-Request-Id", List.of("trace-123")), forwarded);
+    }
+
     private ProxyProperties.BackendDefinition backend(String name, ProxyProperties.ProxyConfig proxyConfig) {
         return backend(name, proxyConfig, "http1_1");
     }

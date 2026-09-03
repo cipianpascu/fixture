@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -329,6 +330,65 @@ class HistoryServiceTest {
     }
 
     @Test
+    void reusesGeneratedUuidForEveryHistoryEventOfTheSameRequest() {
+        List<HistoryPublishRequest> published = new ArrayList<>();
+        HistoryService service = historyService(
+            historyConfig(true, "confirmed", false),
+            mapper(context -> Map.of("requestId", context.additionalProperties().get("requestId"))),
+            publisher(published::add)
+        );
+        ProxyRequestContext request = request("PATCH");
+        ProxyProperties.BackendDefinition backend = backend(
+            Optional.empty(),
+            Map.of("requestId", "generator:uuid")
+        );
+
+        service.emit(backend, request, "{}", Map.of(), "{}", HistoryStatus.SUBMITTED, null, null);
+        service.emit(backend, request, "{}", Map.of(), "{}", HistoryStatus.FULFILLED, 200, "{}");
+
+        String submittedRequestId = published.getFirst().attributes().get("requestId");
+        assertEquals(submittedRequestId, published.get(1).attributes().get("requestId"));
+        assertEquals(java.util.UUID.fromString(submittedRequestId).toString(), submittedRequestId);
+    }
+
+    @Test
+    void addsConfiguredGeneratedUuidToOutboundHeadersAndAttributes() {
+        HistoryService service = new HistoryService();
+        ProxyRequestContext request = request("POST");
+        Map<String, List<String>> outboundHeaders = new LinkedHashMap<>();
+        ProxyProperties.BackendDefinition backend = backend(
+            Optional.empty(),
+            Map.of("requestId", "header:X-Request-Id"),
+            Map.of("X-Request-Id", "generator:uuid")
+        );
+
+        service.enrichOutboundHeaders(backend, request, outboundHeaders);
+        Map<String, String> attributes = service.resolveAdditionalProperties(
+            backend.history().orElseThrow().additionalProperties(), request, outboundHeaders);
+
+        String requestId = outboundHeaders.get("x-request-id").getFirst();
+        assertEquals(requestId, attributes.get("requestId"));
+        assertEquals(java.util.UUID.fromString(requestId).toString(), requestId);
+    }
+
+    @Test
+    void doesNotReplaceAnExistingConfiguredGeneratedHeader() {
+        HistoryService service = new HistoryService();
+        Map<String, List<String>> outboundHeaders = new LinkedHashMap<>(Map.of(
+            "x-request-id", List.of("caller-request-id")
+        ));
+        ProxyProperties.BackendDefinition backend = backend(
+            Optional.empty(),
+            Map.of(),
+            Map.of("X-Request-Id", "generator:uuid")
+        );
+
+        service.enrichOutboundHeaders(backend, request("POST"), outboundHeaders);
+
+        assertEquals(List.of("caller-request-id"), outboundHeaders.get("x-request-id"));
+    }
+
+    @Test
     void supportsCanFilterByLifecycleStatus() {
         List<HistoryPublishRequest> published = new ArrayList<>();
         AtomicInteger mapped = new AtomicInteger();
@@ -575,6 +635,13 @@ class HistoryServiceTest {
     private ProxyProperties.BackendDefinition backend(
         Optional<Boolean> historyEnabled,
         Map<String, String> additionalProperties) {
+        return backend(historyEnabled, additionalProperties, Map.of());
+    }
+
+    private ProxyProperties.BackendDefinition backend(
+        Optional<Boolean> historyEnabled,
+        Map<String, String> additionalProperties,
+        Map<String, String> generatedHeaders) {
         return new ProxyProperties.BackendDefinition() {
             @Override
             public String name() {
@@ -638,7 +705,7 @@ class HistoryServiceTest {
 
             @Override
             public Optional<ProxyProperties.BackendHistoryConfig> history() {
-                if (historyEnabled.isEmpty() && additionalProperties.isEmpty()) {
+                if (historyEnabled.isEmpty() && additionalProperties.isEmpty() && generatedHeaders.isEmpty()) {
                     return Optional.empty();
                 }
                 return Optional.of(new ProxyProperties.BackendHistoryConfig() {
@@ -685,6 +752,11 @@ class HistoryServiceTest {
                     @Override
                     public Map<String, String> additionalProperties() {
                         return additionalProperties;
+                    }
+
+                    @Override
+                    public Map<String, String> generatedHeaders() {
+                        return generatedHeaders;
                     }
                 });
             }

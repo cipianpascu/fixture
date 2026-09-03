@@ -57,6 +57,10 @@ public class ProxyService {
         "content-length",
         "expect",
         "host",
+        "keep-alive",
+        "proxy-connection",
+        "te",
+        "trailer",
         "transfer-encoding",
         "upgrade"
     );
@@ -143,6 +147,9 @@ public class ProxyService {
             authService.enrichHeaders(backend, request, authHeaders, requestBody);
             outboundRequestBody = authService.transformRequestBody(request, authHeaders, requestBody);
             headers = mergeAuthHeaders(headers, authHeaders);
+            if (historyService != null) {
+                historyService.enrichOutboundHeaders(backend, request, headers);
+            }
             logBackendHeaders(backend, targetUrl, headers);
             emitHistory(
                 backend,
@@ -197,7 +204,7 @@ public class ProxyService {
             Response.ResponseBuilder responseBuilder = Response.status(response.statusCode());
             
             // Copy response headers
-            Set<String> blockedResponseHeaders = blockedResponseHeaders(backend);
+            Set<String> blockedResponseHeaders = blockedResponseHeaders(backend, response.headers().map());
             response.headers().map().forEach((name, values) -> {
                 if (blockedResponseHeaders.contains(name.toLowerCase(Locale.ROOT))) {
                     return;
@@ -321,11 +328,37 @@ public class ProxyService {
      * Build HTTP headers from request
      */
     private Map<String, List<String>> buildHeaders(ProxyRequestContext request) {
-        Map<String, List<String>> headers = new HashMap<>(request.headers());
+        return filterForwardHeaders(request.headers());
+    }
+
+    static Map<String, List<String>> filterForwardHeaders(Map<String, List<String>> requestHeaders) {
+        Map<String, List<String>> headers = new HashMap<>(requestHeaders);
+        Set<String> excludedHeaders = hopByHopHeaders(headers);
         headers.entrySet().removeIf(entry ->
-            HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT))
+            excludedHeaders.contains(entry.getKey().toLowerCase(Locale.ROOT))
                 || NON_FORWARDED_REQUEST_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT)));
         return headers;
+    }
+
+    static Set<String> hopByHopHeaders(Map<String, List<String>> headers) {
+        Set<String> excluded = new LinkedHashSet<>(HOP_BY_HOP_HEADERS);
+        headers.forEach((name, values) -> {
+            if (!"connection".equalsIgnoreCase(name) || values == null) {
+                return;
+            }
+            values.stream()
+                .filter(Objects::nonNull)
+                .flatMap(value -> java.util.Arrays.stream(value.split(",")))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .forEach(excluded::add);
+        });
+        return excluded;
+    }
+
+    public static boolean isHopByHopHeader(String headerName) {
+        return headerName != null && HOP_BY_HOP_HEADERS.contains(headerName.toLowerCase(Locale.ROOT));
     }
 
     static Map<String, String> flattenHeaders(Map<String, List<String>> headers) {
@@ -412,8 +445,10 @@ public class ProxyService {
         };
     }
 
-    private Set<String> blockedResponseHeaders(ProxyProperties.BackendDefinition backend) {
-        Set<String> blocked = new LinkedHashSet<>(HOP_BY_HOP_HEADERS);
+    private Set<String> blockedResponseHeaders(
+        ProxyProperties.BackendDefinition backend,
+        Map<String, List<String>> responseHeaders) {
+        Set<String> blocked = hopByHopHeaders(responseHeaders);
         blocked.addAll(SENSITIVE_RESPONSE_HEADERS);
 
         Map<String, String> securityConfig = backend.securityConfig();

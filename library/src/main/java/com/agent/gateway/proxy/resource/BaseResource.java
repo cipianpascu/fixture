@@ -253,12 +253,13 @@ public abstract class BaseResource {
         String method,
         String requestUri,
         String queryString) {
-        return buildRequestContextWithHeaderLists(
+        return new ProxyRequestContext(
             method != null ? method : source.method(),
             requestUri != null ? requestUri : source.requestUri(),
             queryString != null ? queryString : source.queryString(),
             source.headers(),
-            source.cookies()
+            source.cookies(),
+            source.generatedValues()
         );
     }
 

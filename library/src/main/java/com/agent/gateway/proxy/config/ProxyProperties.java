@@ -256,6 +256,13 @@ public interface ProxyProperties {
 
         @WithName("additional-properties")
         Map<String, String> additionalProperties();
+
+        /**
+         * Values generated for the request and inserted into outbound headers before
+         * history emission. Currently supports {@code generator:uuid}.
+         */
+        @WithName("generated-headers")
+        Map<String, String> generatedHeaders();
     }
 
     interface TlsConfig {
