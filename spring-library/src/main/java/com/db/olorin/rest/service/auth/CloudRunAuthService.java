@@ -1,0 +1,27 @@
+package com.db.olorin.rest.service.auth;
+
+import com.db.olorin.rest.model.ProxyRequestContext;
+
+import java.util.Map;
+
+public class CloudRunAuthService implements AuthService {
+
+    private static final String CLOUD_RUN_AUTH_HEADER = "X-Serverless-Authorization";
+
+    private final CloudRunIdTokenProvider idTokenProvider;
+    private final String audience;
+
+    public CloudRunAuthService(
+        CloudRunIdTokenProvider idTokenProvider,
+        String baseUrl,
+        Map<String, String> securityConfig) {
+        this.idTokenProvider = idTokenProvider;
+        this.audience = CloudRunAudienceResolver.resolveAudience(baseUrl, securityConfig, "backend");
+    }
+
+    @Override
+    public void enrichHeaders(ProxyRequestContext request, Map<String, String> headers, String requestBody) {
+        String idToken = idTokenProvider.getIdToken(audience);
+        headers.put(CLOUD_RUN_AUTH_HEADER, "Bearer " + idToken);
+    }
+}
