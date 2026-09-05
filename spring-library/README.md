@@ -296,6 +296,25 @@ successful no-content response. TypedRestClient remains available for callers
 that prefer explicit RestRequest construction, including repeated headers and
 query parameters.
 
+## Typed SOAP calls
+
+Configure a SOAP backend with protocol, soap.version, and an optional action:
+
+    [
+      {"name":"gateway.backends[0].name","value":"customer-profile"},
+      {"name":"gateway.backends[0].baseUrl","value":"https://customer.example.com"},
+      {"name":"gateway.backends[0].path","value":"/soap/customer-profile"},
+      {"name":"gateway.backends[0].protocol","value":"soap"},
+      {"name":"gateway.backends[0].soap.version","value":"1.1"},
+      {"name":"gateway.backends[0].soap.soap-action","value":"urn:GetCustomerProfile"}
+    ]
+
+Invoke JAXB-generated request and response classes through `TypedSoapClient`:
+
+    CustomerProfileResponse response = typedSoapClient.exchange(
+        "customer-profile", new GetCustomerProfile("321"),
+        CustomerProfileResponse.class);
+
 ## Model generation
 
 Generate models in the consuming application:

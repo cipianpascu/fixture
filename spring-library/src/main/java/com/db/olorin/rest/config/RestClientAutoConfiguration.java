@@ -2,6 +2,8 @@ package com.db.olorin.rest.config;
 
 import com.db.olorin.rest.client.SpringTypedRestClient;
 import com.db.olorin.rest.client.TypedRestClient;
+import com.db.olorin.rest.client.TypedSoapClient;
+import com.db.olorin.rest.client.SpringTypedSoapClient;
 import com.db.olorin.rest.client.OlorinRestClientInjector;
 import com.db.olorin.rest.service.auth.AuthServiceFactory;
 import com.db.olorin.rest.service.auth.CloudRunIdTokenProvider;
@@ -89,6 +91,11 @@ public class RestClientAutoConfiguration {
         TlsContextFactory tlsContextFactory,
         HistoryService historyService) {
         return new SpringTypedRestClient(properties, RestClient.builder(), authServiceFactory, tlsContextFactory, historyService);
+    }
+
+    @Bean
+    TypedSoapClient typedSoapClient(ProxyProperties properties, TlsContextFactory tlsContextFactory, AuthServiceFactory authServiceFactory, HistoryService historyService) {
+        return new SpringTypedSoapClient(properties, tlsContextFactory, authServiceFactory, historyService);
     }
 
     @Bean
